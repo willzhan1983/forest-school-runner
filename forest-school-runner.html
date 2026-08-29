@@ -259,10 +259,26 @@ var Audio2 = {
 
   /* ---- 轻量循环 BGM：贝斯 + 主旋律 + 轻打击，随昼夜自动变化 ---- */
   musicOn:true, musicCtx:null, musicGain:null, hatBuf:null,
-  /* 16 步主旋律（C - G - Am - F 四小节和声） */
-  MUSIC_MEL:[392,523,659,523, 587,494,392,494, 523,440,523,659, 523,440,349,440],
-  /* 8 步贝斯根音：C C  G G  Am Am  F F */
-  MUSIC_BASS:[130.81,130.81, 98.00,98.00, 110.00,110.00, 87.31,87.31],
+  /* 32 步主旋律：C 大调五声音阶（C D E G A，无半音，更清新自然）
+     A 句 16 步中音区陈述 → B 句 16 步高音区扬起，循环 13.4 秒 */
+  MUSIC_MEL:[
+    /* A 句 · 陈述 */
+    392.00, 440.00, 523.25, 587.33,
+    659.25, 587.33, 523.25, 440.00,
+    392.00, 440.00, 523.25, 659.25,
+    587.33, 523.25, 440.00, 392.00,
+    /* B 句 · 扬起 */
+    523.25, 659.25, 783.99, 659.25,
+    587.33, 659.25, 523.25, 440.00,
+    523.25, 587.33, 659.25, 783.99,
+    880.00, 783.99, 659.25, 587.33
+  ],
+  /* 16 步贝斯根音（每 2 个旋律步换一次）
+     A 句：C - Am - Fmaj7 - G   ／   B 句：C - Fmaj7 - G - G（末尾持续属和声，回环到 A 句有解决感） */
+  MUSIC_BASS:[
+    65.41, 65.41, 55.00, 55.00, 43.65, 43.65, 49.00, 49.00,
+    65.41, 65.41, 43.65, 43.65, 49.00, 49.00, 49.00, 49.00
+  ],
 
   startMusic:function(){
     if(!this.enabled || !this.musicOn || this.musicCtx) return;
@@ -293,12 +309,12 @@ var Audio2 = {
       var vol = 1 - nAmt * 0.45;         /* 夜晚整体更轻 */
 
       /* 主旋律：夜里降八度 */
-      var f = this.MUSIC_MEL[i % 16] * (nAmt > 0.5 ? 0.5 : 1);
+      var f = this.MUSIC_MEL[i % 32] * (nAmt > 0.5 ? 0.5 : 1);
       this._musicNote(f, t, m.beat * 0.92, 0.050 * vol, 'triangle');
 
       /* 贝斯：每 2 步一个根音 */
       if(i % 2 === 0){
-        this._musicNote(this.MUSIC_BASS[(i / 2) % 8], t, m.beat * 1.7, 0.080 * vol, 'sine');
+        this._musicNote(this.MUSIC_BASS[(i / 2) % 16], t, m.beat * 1.7, 0.080 * vol, 'sine');
       }
       /* 轻打击：正拍稍重、弱拍很轻 */
       this._musicHat(t, (i % 2 === 0 ? 0.030 : 0.014) * vol * (1 - nAmt * 0.45));
@@ -351,6 +367,17 @@ var Audio2 = {
     try{ localStorage.setItem('fsr_music', this.musicOn ? '1' : '0'); }catch(e){}
     if(this.musicOn){ this.startMusic(); Audio2.click(); }
     else { this.stopMusic(); Audio2.click(); }
+  },
+  /* 首次用户手势唤醒：浏览器自动播放策略要求 AudioContext 必须在真实手势后
+     才会进入 running。菜单页/结算页也要有 BGM，所以在任何 pointerdown/keydown
+     时调它。startMusic() 自带幂等守卫，重复调用安全。 */
+  kick:function(){
+    this.init();
+    if(!this.ctx) return;
+    if(this.ctx.state === 'suspended'){
+      try{ this.ctx.resume(); }catch(e){}
+    }
+    if(this.musicOn && !this.musicCtx) this.startMusic();
   }
 };
 
@@ -362,7 +389,7 @@ var Input = {
 };
 
 window.addEventListener('keydown', function(e){
-  Audio2.init();
+  Audio2.init(); Audio2.kick();
   var k = e.key.toLowerCase();
   if([' ','arrowup','arrowdown','w','s','shift','d','enter'].indexOf(k)>=0) e.preventDefault();
   if(Game.state==='playing'){
@@ -415,9 +442,12 @@ function hitRect(x,y,r){ return x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h; }
 function skillBtnRect(){ return {x:W-120,y:H-98,w:100,h:76}; }
 function pauseBtnRect(){ return {x:14,y:14,w:56,h:56}; }
 function musicBtnRect(){ return {x:80,y:14,w:56,h:56}; }
+/* 菜单页的音乐开关放左上角：菜单页没有暂停按钮，且该区域
+   （x 14..70 / y 14..70）与标题、难度按钮、角色卡、开始按钮均不重叠。 */
+function menuMusicBtnRect(){ return {x:14, y:14, w:56, h:56}; }
 
 canvas.addEventListener('pointerdown', function(e){
-  e.preventDefault(); Audio2.init();
+  e.preventDefault(); Audio2.init(); Audio2.kick();
   var p = toLogic(e.clientX,e.clientY);
   Input.pointerDown=true; Input.startX=p.x; Input.startY=p.y;
   Input.slideFired=false; Input.tapX=p.x; Input.tapY=p.y; Input.tapHandled=false;
@@ -1481,7 +1511,8 @@ function takeHit(){
 function gameOver(){
   Game.state = 'gameover';
   Audio2.over();
-  Audio2.stopMusic();
+  /* BGM 延续到结算页 —— 死了突然静音很突兀。重开时 startGame() 里的
+     startMusic() 带幂等守卫，不会重复启动。 */
   if(Math.floor(Game.score) > Game.best){
     Game.best = Math.floor(Game.score);
     try{ localStorage.setItem('fsr_best', String(Game.best)); }catch(e){}
@@ -2343,6 +2374,9 @@ function drawMenu(){
 
   drawButton(startBtnRect(), '开 始 跑', '#4caf6d', '#ffffff');
 
+  /* 音乐开关（菜单页左上角，游戏中 HUD 里也复用同一个绘制函数） */
+  drawMusicBtn(menuMusicBtnRect());
+
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.font = '14px system-ui,sans-serif';
@@ -2350,6 +2384,41 @@ function drawMenu(){
   ctx.fillText('键盘：空格/↑ 跳跃（涂涂可二段） · ↓ 滑铲 · D/Shift 冲刺 · P 暂停', W / 2, H - 30);
   ctx.fillText('触屏：点击跳 · 下滑滑铲 · 长按滑翔 · 右下角技能键', W / 2, H - 10);
   ctx.restore();
+}
+
+/* 音乐开关按钮：菜单页与 HUD 共用，位置由参数决定 */
+function drawMusicBtn(mr){
+  ctx.fillStyle = 'rgba(0,0,0,.30)';
+  roundRect(mr.x, mr.y, mr.w, mr.h, 12); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2;
+  roundRect(mr.x, mr.y, mr.w, mr.h, 12); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if(Audio2.musicOn){
+    /* 音符 ♪ */
+    ctx.beginPath();
+    ctx.ellipse(mr.x + 26, mr.y + 34, 6, 4, -0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(mr.x + 30, mr.y + 34); ctx.lineTo(mr.x + 30, mr.y + 18);
+    ctx.moveTo(mr.x + 30, mr.y + 18); ctx.lineTo(mr.x + 38, mr.y + 22);
+    ctx.stroke();
+  }else{
+    /* 静音：音符 + 斜杠 */
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.ellipse(mr.x + 26, mr.y + 34, 6, 4, -0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(mr.x + 30, mr.y + 34); ctx.lineTo(mr.x + 30, mr.y + 18);
+    ctx.moveTo(mr.x + 30, mr.y + 18); ctx.lineTo(mr.x + 38, mr.y + 22);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(mr.x + 18, mr.y + 20); ctx.lineTo(mr.x + 42, mr.y + 44);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawHUD(){
@@ -2406,38 +2475,7 @@ function drawHUD(){
   }
 
   /* 音乐开关按钮 */
-  var mr = musicBtnRect();
-  ctx.fillStyle = 'rgba(0,0,0,.30)';
-  roundRect(mr.x, mr.y, mr.w, mr.h, 12); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2;
-  roundRect(mr.x, mr.y, mr.w, mr.h, 12); ctx.stroke();
-  ctx.fillStyle = '#fff';
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  if(Audio2.musicOn){
-    /* 音符 ♪ */
-    ctx.beginPath();
-    ctx.ellipse(mr.x + 26, mr.y + 34, 6, 4, -0.4, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(mr.x + 30, mr.y + 34); ctx.lineTo(mr.x + 30, mr.y + 18);
-    ctx.moveTo(mr.x + 30, mr.y + 18); ctx.lineTo(mr.x + 38, mr.y + 22);
-    ctx.stroke();
-  }else{
-    /* 静音：音符 + 斜杠 */
-    ctx.globalAlpha = 0.7;
-    ctx.beginPath();
-    ctx.ellipse(mr.x + 26, mr.y + 34, 6, 4, -0.4, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(mr.x + 30, mr.y + 34); ctx.lineTo(mr.x + 30, mr.y + 18);
-    ctx.moveTo(mr.x + 30, mr.y + 18); ctx.lineTo(mr.x + 38, mr.y + 22);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(mr.x + 18, mr.y + 20); ctx.lineTo(mr.x + 42, mr.y + 44);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
+  drawMusicBtn(musicBtnRect());
 
   /* 技能按钮 */
   var c = CHARACTERS[Game.charId];
@@ -2588,6 +2626,7 @@ function handleMenuTap(x, y){
         return;
       }
     }
+    if(hitRect(x, y, menuMusicBtnRect())){ Audio2.toggleMusic(); return; }
     if(hitRect(x, y, picBtnRect(0))){ pickPic('cat'); return; }
     if(hitRect(x, y, picBtnRect(1))){ pickPic('owl'); return; }
     if(hitRect(x, y, cardRect(0))){ Game.charId = 'cat'; Audio2.click(); return; }
