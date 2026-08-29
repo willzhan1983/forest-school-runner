@@ -28,3 +28,10 @@ test('keeps the baseline runner compatibility anchors', async () => {
     assert.match(gameJs, new RegExp(marker));
   }
 });
+
+test('keeps the legacy game URL pointed at the split entry page', async () => {
+  const legacyHtml = await readProjectFile('forest-school-runner.html');
+
+  assert.match(legacyHtml, /http-equiv="refresh" content="0; url=\.\/"/);
+  assert.match(legacyHtml, /href="\.\/"/);
+});

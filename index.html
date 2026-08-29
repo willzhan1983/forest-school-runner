@@ -12,9 +12,9 @@
   目前两个角色都用 Canvas 程序绘制（drawCatSprite / drawOwlSprite）。
   换成真实素材的两种方式：
 
-  方式 A（推荐，保持单文件）：
+  方式 A（推荐，保持图片内嵌）：
     1. 终端执行： base64 -i cat.png | pbcopy
-    2. 在 CHARACTERS 对应角色里加 spriteSrc: "data:image/png;base64,粘贴内容"
+    2. 在 js/game.js 的 CHARACTERS 对应角色里加 spriteSrc: "data:image/png;base64,粘贴内容"
     3. 代码会自动改用 drawImage 绘制，并保留跑动/跳跃/滑铲形变动画。
 
   方式 B（图片放同目录）：
