@@ -337,10 +337,10 @@ const R = H.results();
   {
     // 9a 静态源码检查：必须有两个独立的 pointermove 监听，且第一个保留 pointerDown 守卫
     L.w('\n=== C9 触屏滑铲手势未被悬停监听破坏 ===');
-    const html = fs.readFileSync(path.join(__dirname, '..', 'forest-school-runner.html'), 'utf8');
-    const moves = html.match(/canvas\.addEventListener\('pointermove'/g) || [];
-    const idx = html.indexOf("canvas.addEventListener('pointermove'");
-    const firstBlock = html.slice(idx, idx + 400);
+    const gameJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'game.js'), 'utf8');
+    const moves = gameJs.match(/canvas\.addEventListener\('pointermove'/g) || [];
+    const idx = gameJs.indexOf("canvas.addEventListener('pointermove'");
+    const firstBlock = gameJs.slice(idx, idx + 400);
     const guard = /if\(!Input\.pointerDown\)\s*return;/.test(firstBlock);
     L.w('  pointermove 监听数量: ' + moves.length + '（期望 2：原生滑铲 + 新增悬停）');
     L.w('  第一个监听保留 `if(!Input.pointerDown) return;` 守卫: ' + guard);

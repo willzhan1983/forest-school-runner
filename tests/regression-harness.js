@@ -16,7 +16,7 @@ const fs = require('fs');
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const DIR = __dirname;
-const FILE_URL = 'file://' + path.resolve(DIR, '..', 'forest-school-runner.html');
+const FILE_URL = 'file://' + path.resolve(DIR, '..', 'index.html');
 
 const LOGIC_W = 960, LOGIC_H = 540;
 
