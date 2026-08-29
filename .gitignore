@@ -1,0 +1,14 @@
+# 本地验证产物，不入库
+diff-verify.js
+diff-shots.js
+diff-verify-result.txt
+shot-*.png
+
+# QA 探查脚本与截图（保留正式的 regression-* 测试脚本）
+tests/_probe*
+tests/*.png
+tests/*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
