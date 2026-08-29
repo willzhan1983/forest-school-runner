@@ -1,20 +1,39 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>森林学校大冒险</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>森林学校大冒险 · Forest School Runner</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8C%B0</text></svg>">
-<style>
-  html,body{margin:0;height:100%;background:#7fc96a;}
-  body{display:flex;align-items:center;justify-content:center;
-       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;}
-  a{color:#fff;font-size:18px;text-decoration:none;padding:14px 28px;
-    background:rgba(0,0,0,.28);border-radius:999px;}
-</style>
-<meta http-equiv="refresh" content="0; url=forest-school-runner.html">
+<!--
+  ============================================================
+  如何把占位角色换成你真实的 IP 形象图片
+  ============================================================
+  目前两个角色都用 Canvas 程序绘制（drawCatSprite / drawOwlSprite）。
+  换成真实素材的两种方式：
+
+  方式 A（推荐，保持图片内嵌）：
+    1. 终端执行： base64 -i cat.png | pbcopy
+    2. 在 js/game.js 的 CHARACTERS 对应角色里加 spriteSrc: "data:image/png;base64,粘贴内容"
+    3. 代码会自动改用 drawImage 绘制，并保留跑动/跳跃/滑铲形变动画。
+
+  方式 B（图片放同目录）：
+    把 cat.png / owl.png 与本 html 放同一目录，
+    在 CHARACTERS 里写 spriteSrc: "cat.png"。
+
+  角色配色可在 CHARACTERS.colors 里直接微调。
+  ============================================================
+-->
+<link rel="stylesheet" href="css/game.css">
 </head>
 <body>
-<a href="forest-school-runner.html">进入森林学校大冒险</a>
+<div id="stage"><canvas id="game"></canvas></div>
+<div id="tip">
+  <span>窗口有点窄，横屏或全屏后画面更大更好玩</span>
+  <button id="fsBtn">全屏玩</button>
+  <button id="closeTip" class="alt">知道了</button>
+</div>
+<input type="file" id="picInput" accept="image/*" style="display:none">
+<script src="js/game.js"></script>
 </body>
 </html>

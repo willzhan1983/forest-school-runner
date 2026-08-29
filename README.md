@@ -1,6 +1,6 @@
 # 森林学校大冒险 · Forest School Runner
 
-一款给小朋友做的 2D 横版跑酷游戏。**单文件 HTML，零依赖**，浏览器打开即玩。
+一款给小朋友做的 2D 横版跑酷游戏。使用原生 HTML、CSS 和 JavaScript，零第三方依赖。
 
 ## 在线玩
 
@@ -50,17 +50,17 @@
 
 ## 本地运行
 
-直接双击 `forest-school-runner.html`，或：
+在项目根目录启动一个静态服务器：
 
 ```bash
-open forest-school-runner.html
+python3 -m http.server 8000
 ```
 
-无需安装任何依赖，也无需联网。
+然后打开 `http://127.0.0.1:8000/`。无需安装项目依赖，也无需联网。
 
 ## 技术
 
-- 单文件：HTML + CSS + 原生 JavaScript，全部内联
+- 结构：`index.html` + `css/game.css` + `js/game.js`
 - 渲染：Canvas 2D，程序化绘制 + base64 内嵌角色立绘
 - 音频：Web Audio API 实时合成（三层循环 BGM + 音效），无音频文件
   - BGM 为 C 大调五声音阶 32 步 A/B 句结构，配 C-Am-Fmaj7-G 和声，13.4 秒一循环
@@ -71,7 +71,7 @@ open forest-school-runner.html
 
 ## 二次修改
 
-打开 HTML 搜索关键词即可改：
+打开 `js/game.js` 搜索关键词即可改：
 
 | 想改什么 | 搜什么 |
 |---|---|
