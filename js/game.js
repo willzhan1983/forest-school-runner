@@ -11,6 +11,8 @@ const MAX_FALL = 17;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let scale = 1;
+const LEADERBOARD_KEY = 'fsr_leaderboard_v1';
+const LEADERBOARD_LIMIT = 10;
 
 /* ===== 2. 角色定义 ===== */
 const CHARACTERS = {
@@ -606,10 +608,38 @@ var THEMES = [
 var Game = {
   state:'menu', charId:'cat', paused:false,
   score:0, books:0, acorns:0, lives:3, maxLives:3, nextHealScore:100,
-  distance:0, best:0, speed:5.6,
+  distance:0, best:0, leaderboard:[], speed:5.6,
   themeIndex:0, time:0, shake:0, banner:0, flash:0
 };
 try{ Game.best = parseInt(localStorage.getItem('fsr_best')||'0',10)||0; }catch(e){ Game.best=0; }
+function loadLeaderboard(){
+  try{
+    var stored = JSON.parse(localStorage.getItem(LEADERBOARD_KEY) || '[]');
+    if(!Array.isArray(stored)) return [];
+    return stored.filter(function(entry){
+      return entry && typeof entry.name === 'string' && Number.isFinite(entry.score) && entry.score > 0;
+    }).map(function(entry){
+      return { name:entry.name.slice(0, 8), score:Math.floor(entry.score), charId:entry.charId === 'owl' ? 'owl' : 'cat', date:entry.date || Date.now() };
+    }).sort(function(a, b){ return b.score - a.score || a.date - b.date; }).slice(0, LEADERBOARD_LIMIT);
+  }catch(e){ return []; }
+}
+function saveLeaderboard(){
+  try{ localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(Game.leaderboard)); }catch(e){}
+}
+function recordLeaderboardScore(){
+  var score = Math.floor(Game.score);
+  var board = Game.leaderboard;
+  if(score <= 0 || (board.length >= LEADERBOARD_LIMIT && score <= board[board.length - 1].score)) return;
+  var fallback = CHARACTERS[Game.charId].name;
+  var entered = window.prompt('进入家庭积分榜！请输入昵称（最多 8 个字）', fallback);
+  var name = (entered || fallback).trim().slice(0, 8) || fallback;
+  board.push({ name:name, score:score, charId:Game.charId, date:Date.now() });
+  board.sort(function(a, b){ return b.score - a.score || a.date - b.date; });
+  Game.leaderboard = board.slice(0, LEADERBOARD_LIMIT);
+  saveLeaderboard();
+}
+Game.leaderboard = loadLeaderboard();
+if(Game.leaderboard.length) Game.best = Math.max(Game.best, Game.leaderboard[0].score);
 /* 音乐开关记忆（默认开） */
 try{ var _mm = localStorage.getItem('fsr_music'); if(_mm !== null) Audio2.musicOn = (_mm === '1'); }catch(e){}
 
@@ -1507,6 +1537,7 @@ function takeHit(){
 }
 
 function gameOver(){
+  if(Game.state === 'gameover') return;
   Game.state = 'gameover';
   Audio2.over();
   /* BGM 延续到结算页 —— 死了突然静音很突兀。重开时 startGame() 里的
@@ -1515,6 +1546,7 @@ function gameOver(){
     Game.best = Math.floor(Game.score);
     try{ localStorage.setItem('fsr_best', String(Game.best)); }catch(e){}
   }
+  recordLeaderboardScore();
 }
 
 /* ============================================================
@@ -2583,8 +2615,8 @@ function drawGameOver(){
   ctx.fillStyle = '#ffd45e';
   ctx.fillText('这一趟跑得很棒！', W / 2, 100);
 
-  /* 数据面板 */
-  var px = 250, py = 140, pw = 460, ph = 250;
+  /* 本局成绩 */
+  var px = 160, py = 140, pw = 290, ph = 250;
   ctx.fillStyle = 'rgba(255,255,255,.94)';
   roundRect(px, py, pw, ph, 20); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,.14)'; ctx.lineWidth = 3;
@@ -2599,16 +2631,43 @@ function drawGameOver(){
   rows.forEach(function(r, i){
     var ry = py + 52 + i * 46;
     ctx.textAlign = 'left';
-    ctx.font = '19px system-ui,sans-serif';
+    ctx.font = '17px system-ui,sans-serif';
     ctx.fillStyle = '#6f7d72';
     ctx.fillText(r[0], px + 42, ry);
     ctx.textAlign = 'right';
-    ctx.font = 'bold 26px system-ui,sans-serif';
+    ctx.font = 'bold 23px system-ui,sans-serif';
     ctx.fillStyle = r[2];
     ctx.fillText(r[1], px + pw - 42, ry);
     ctx.strokeStyle = 'rgba(0,0,0,.07)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(px + 36, ry + 16); ctx.lineTo(px + pw - 36, ry + 16); ctx.stroke();
   });
+
+  /* 本机家庭积分榜：保存前 10 名，结算页展示全部记录。 */
+  var lx = 480, lw = 320;
+  ctx.fillStyle = 'rgba(255,255,255,.94)';
+  roundRect(lx, py, lw, ph, 20); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.14)'; ctx.lineWidth = 3;
+  roundRect(lx, py, lw, ph, 20); ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 20px system-ui,sans-serif';
+  ctx.fillStyle = '#3f8f57';
+  ctx.fillText('家庭积分榜', lx + lw / 2, py + 32);
+  if(Game.leaderboard.length === 0){
+    ctx.font = '17px system-ui,sans-serif';
+    ctx.fillStyle = '#6f7d72';
+    ctx.fillText('第一名等你来！', lx + lw / 2, py + 142);
+  }else{
+    Game.leaderboard.forEach(function(entry, i){
+      var ry = py + 58 + i * 18;
+      var medal = i === 0 ? '#e6af2e' : (i === 1 ? '#8f9aa4' : (i === 2 ? '#b97842' : '#6f7d72'));
+      ctx.textAlign = 'left'; ctx.font = 'bold 14px system-ui,sans-serif'; ctx.fillStyle = medal;
+      ctx.fillText((i + 1) + '.', lx + 24, ry);
+      ctx.fillStyle = '#45564a';
+      ctx.fillText(entry.name + ' · ' + (entry.charId === 'owl' ? '涂涂' : '钱钱'), lx + 52, ry);
+      ctx.textAlign = 'right'; ctx.font = 'bold 14px system-ui,sans-serif'; ctx.fillStyle = '#3f8f57';
+      ctx.fillText(String(entry.score), lx + lw - 24, ry);
+    });
+  }
 
   /* 难度（★ 统一最高分的必要补偿：四档共用一个 fsr_best，
      若结算页不显示难度，玩家无法判断纪录是在哪一档拿的，成就感会被稀释） */
