@@ -43,6 +43,57 @@ const CHARACTERS = {
     sprite:null, spriteReady:false, sheetReady:false
   }
 };
+
+/* 测试素材只在 URL 带 ?testSprites=1 时加载；默认继续使用现有角色与回退逻辑。 */
+const USE_EXTRACTED_TEST_SPRITES = typeof URLSearchParams !== 'undefined' &&
+  !!(window.location && new URLSearchParams(window.location.search || '').has('testSprites'));
+const TEST_SPRITE_FILES = {
+  cat:{
+    idle:'idle.png', run:['run_01.png','run_02.png','run_03.png','run_04.png'],
+    jump:'jump.png', fall:'fall.png', land:'land.png', slide:'slide.png',
+    dash:['dash_01.png','dash_02.png','dash_03.png'], hurt:'hurt.png', win:'win.png'
+  },
+  owl:{
+    idle:'idle.png', run:['run_01.png','run_02.png','run_03.png','run_04.png'],
+    jump:'jump.png', fall:'fall.png', land:'land.png', slide:'slide.png',
+    glide:'glide.png', hurt:'hurt.png', win:'win.png'
+  }
+};
+
+function loadTestActionSprites(){
+  if(!USE_EXTRACTED_TEST_SPRITES) return;
+  Object.keys(TEST_SPRITE_FILES).forEach(function(id){
+    var c = CHARACTERS[id];
+    var root = 'assets/chars/' + (id === 'cat' ? 'fuzzy' : 'doodle') + '/v1-test/';
+    c.testSprites = {};
+    Object.keys(TEST_SPRITE_FILES[id]).forEach(function(state){
+      var files = Array.isArray(TEST_SPRITE_FILES[id][state]) ? TEST_SPRITE_FILES[id][state] : [TEST_SPRITE_FILES[id][state]];
+      c.testSprites[state] = files.map(function(file){
+        var img = new Image();
+        img.src = root + file;
+        return img;
+      });
+    });
+  });
+}
+
+function testActionSprite(c, p){
+  if(!USE_EXTRACTED_TEST_SPRITES || !c.testSprites) return null;
+  var frames;
+  if(p.preview) frames = c.testSprites.idle;
+  else if(p.hurtTimer > 0) frames = c.testSprites.hurt;
+  else if(c.id === 'cat' && p.dashing) frames = c.testSprites.dash;
+  else if(c.id === 'owl' && p.gliding) frames = c.testSprites.glide;
+  else if(p.sliding) frames = c.testSprites.slide;
+  else if(!p.grounded) frames = p.vy < 0 ? c.testSprites.jump : c.testSprites.fall;
+  else if(p.landTimer > 0) frames = c.testSprites.land;
+  else frames = c.testSprites.run;
+  if(!frames || !frames.length) return null;
+  var idx = frames.length > 1 ? Math.floor(Game.time / 7) % frames.length : 0;
+  return frames[idx] && frames[idx].complete && frames[idx].naturalWidth ? frames[idx] : null;
+}
+
+loadTestActionSprites();
 Object.values(CHARACTERS).forEach(function(c){
   if(c.spriteSrc){
     var img = new Image();
@@ -554,7 +605,7 @@ var THEMES = [
 /* ===== 6. 游戏状态 ===== */
 var Game = {
   state:'menu', charId:'cat', paused:false,
-  score:0, books:0, acorns:0, lives:3, maxLives:3,
+  score:0, books:0, acorns:0, lives:3, maxLives:3, nextHealScore:100,
   distance:0, best:0, speed:5.6,
   themeIndex:0, time:0, shake:0, banner:0, flash:0
 };
@@ -600,14 +651,26 @@ function drawCharacter(c, p, alpha){
   ctx.save();
   ctx.globalAlpha = (alpha===undefined?1:alpha);
 
+  var actionSprite = testActionSprite(c, p);
+
   var cx = p.x, cy = p.y + p.h/2;      // 以角色中心为锚点
-  var squat = p.sliding ? 0.52 : 1;     // 滑铲压低
-  var stretch = p.vy < -2 ? 1.12 : (p.vy > 6 ? 0.92 : 1);
+  var squat = actionSprite ? 1 : (p.sliding ? 0.52 : 1);     // 测试动作图自身包含姿势
+  var stretch = actionSprite ? 1 : (p.vy < -2 ? 1.12 : (p.vy > 6 ? 0.92 : 1));
+  var landSquash = (p.grounded && !p.sliding) ? (p.landSquash || 0) : 0;
 
   ctx.translate(cx, p.y + p.h);
   ctx.rotate(p.rot || 0);
-  ctx.scale(1/stretch, stretch * squat);
+  ctx.scale((1/stretch) * (1 + landSquash * 0.75), stretch * squat * (1 - landSquash));
   ctx.translate(0, -p.h);
+
+  /* 测试动作帧：单帧未加载时会继续走现有素材/程序绘制回退。 */
+  if(actionSprite){
+    var actionAr = actionSprite.width / Math.max(1, actionSprite.height);
+    var actionW = p.h * actionAr;
+    ctx.drawImage(actionSprite, p.w / 2 - actionW / 2, 0, actionW, p.h);
+    ctx.restore();
+    return;
+  }
 
   /* 优先：序列帧素材（会播放跑步循环动画） */
   if(c.sheetReady && c.sheet && c.sheet.img){
@@ -1349,8 +1412,8 @@ function createPlayer(charId){
     jumps:0, maxJumps:(charId === 'owl') ? 2 : 1,
     sliding:false, slideTimer:0,
     gliding:false,
-    dashing:false, dashTimer:0, dashCd:0,
-    hurtTimer:0, invuln:0,
+    dashing:false, dashTimer:0, dashImpactTimer:0, dashCd:0,
+    hurtTimer:0, invuln:0, landTimer:0, landSquash:0,
     runPhase:0, rot:0,
     trail:[]
   };
@@ -1393,8 +1456,8 @@ function doSkill(){
   var c = CHARACTERS[Game.charId];
   if(c.id === 'cat'){
     if(p.dashCd > 0 || p.dashing) return;
-    p.dashing = true; p.dashTimer = 26; p.dashCd = c.cd;
-    p.invuln = Math.max(p.invuln, 30);
+    p.dashing = true; p.dashTimer = 34; p.dashImpactTimer = 38; p.dashCd = c.cd;
+    p.invuln = Math.max(p.invuln, 40);
     Audio2.dash();
     for(var i = 0; i < 10; i++) spark(p.x, p.y + p.h / 2, '#9fd8ff');
   }else{
@@ -1420,7 +1483,7 @@ function updateSkillHold(){
 
 function takeHit(){
   var p = player;
-  if(p.invuln > 0 || p.hurtTimer > 0) return;
+  if(p.invuln > 0 || p.hurtTimer > 0 || p.dashImpactTimer > 0) return;
 
   /* 有护盾：消耗一层，不掉血 */
   if(Buff.shield > 0){
@@ -1698,7 +1761,7 @@ function grantPowerup(kind){
 function startGame(){
   Game.state = 'playing';
   Game.paused = false;
-  Game.score = 0; Game.books = 0; Game.acorns = 0;
+  Game.score = 0; Game.books = 0; Game.acorns = 0; Game.nextHealScore = 100;
   /* ★ R4-1：起始速度必须按档位取，否则任何档位开局第一帧都会按 5.6 起步
      （简单档表现为"开局突然偏快，一帧后才降回 4.4"）。
      ★ R4-2：结算页「再跑一次」直接走 startGame()，不经过菜单/不会调
@@ -1765,8 +1828,11 @@ function update(dt){
     if(p.dashTimer <= 0) p.dashing = false;
   }
   if(p.dashCd > 0) p.dashCd -= dt * 16.6;
+  if(p.dashImpactTimer > 0) p.dashImpactTimer -= dt;
   if(p.invuln > 0) p.invuln -= dt;
   if(p.hurtTimer > 0) p.hurtTimer -= dt;
+  if(p.landTimer > 0) p.landTimer -= dt;
+  if(p.landSquash > 0) p.landSquash *= Math.pow(0.72, dt);
 
   /* 滑铲计时 */
   if(p.sliding){
@@ -1796,6 +1862,10 @@ function update(dt){
       var pl = platforms[i];
       if(p.x + p.w * 0.72 > pl.x && p.x + p.w * 0.28 < pl.x + pl.w){
         if(feetBefore <= pl.y + 2 && p.y + p.h >= pl.y){
+          if(!p.grounded){
+            p.landTimer = 9;
+            p.landSquash = Math.min(0.16, Math.max(0.06, p.vy * 0.012));
+          }
           p.y = pl.y - p.h;
           p.vy = 0;
           p.grounded = true;
@@ -1810,6 +1880,10 @@ function update(dt){
 
   /* 地面碰撞 */
   if(p.y + p.h >= GROUND_Y){
+    if(!p.grounded){
+      p.landTimer = 9;
+      p.landSquash = Math.min(0.16, Math.max(0.06, p.vy * 0.012));
+    }
     p.y = GROUND_Y - p.h;
     p.vy = 0;
     if(!p.grounded) puff(p.x + 10, GROUND_Y, 4, 'rgba(255,255,255,.8)');
@@ -1940,7 +2014,7 @@ function update(dt){
     var ob = obstacles[k];
     if(ob.dead) continue;
     if(px < ob.x + ob.w - 4 && px + pw > ob.x + 4 && py < ob.y + ob.h && py + ph > ob.y + 4){
-      if(p.dashing){
+      if(p.dashing || p.dashImpactTimer > 0){
         ob.dead = true; ob.deadT = 26; ob.deadRot = 0;
         addScore(25);
         floatText(ob.x + ob.w / 2, ob.y, '+25', '#ffd45e');
@@ -2051,9 +2125,18 @@ function drawBuffChip(x, y, kind, ratio, stacks){
   return x + (r + 3) * 2 + 8;
 }
 
-/* 统一加分入口，双倍分道具生效 */
+/* 统一加分入口：双倍分生效；每满 100 分在未满血时回复 1 颗心。 */
 function addScore(n){
   Game.score += (Buff.double > 0) ? n * 2 : n;
+  while(Game.score >= Game.nextHealScore){
+    if(Game.lives < Game.maxLives && player){
+      Game.lives++;
+      floatText(player.x + player.w / 2, player.y - 10, '+1 心', '#ff6b7a');
+      ring(player.x + player.w / 2, player.y + player.h / 2, '#ff9bac');
+      for(var i = 0; i < 10; i++) spark(player.x + player.w / 2, player.y + player.h / 2, '#ff9bac');
+    }
+    Game.nextHealScore += 100;
+  }
 }
 
 /* ============================================================
@@ -2254,7 +2337,7 @@ function drawMenu(){
     ctx.save();
     ctx.translate(r.x + 78, r.y + 46);
     var preview = { x:0, y:0, w:52, h:68, runPhase:Game.time * 0.12,
-                    vy:0, grounded:true, sliding:false, gliding:false, hurtTimer:0, rot:0 };
+                    vy:0, grounded:true, sliding:false, gliding:false, hurtTimer:0, landTimer:0, rot:0, preview:true };
     drawCharacter(c, preview, 1);
     ctx.restore();
 
@@ -2392,6 +2475,9 @@ function drawHUD(){
   ctx.font = '15px system-ui,sans-serif'; ctx.lineWidth = 4;
   ctx.fillStyle = 'rgba(255,255,255,.92)';
   ctx.fillText('橡果 ' + Game.acorns + '   ·   书本 ' + Game.books, W / 2, 70);
+  ctx.font = '12px system-ui,sans-serif';
+  ctx.fillStyle = 'rgba(255,236,192,.92)';
+  ctx.fillText('每 100 分回复 1 心', W / 2, 90);
 
   /* 暂停按钮 */
   var pr = pauseBtnRect();
