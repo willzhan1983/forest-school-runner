@@ -573,8 +573,8 @@ canvas.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 /* ============================================================
  * 4.5 难度配置（速度曲线保持原样；高档位障碍间隔单独放宽）
  * ------------------------------------------------------------
- * 🔵 每档速度固定、不再随距离增加；高档位以少量固定速度差和生命数区分。
- *    普通、困难、噩梦不再生成双障碍，确保一次跳跃只需处理一个障碍。
+ * 🔵 普通、困难、噩梦每跑 1000 米小幅提速一次，2000 米后封顶。
+ *    不再生成双障碍，确保一次跳跃只需处理一个障碍。
  * ⚠️ R8：easy 档 dblFrom 用 1e9 而非 Infinity —— Infinity 经 JSON
  *    序列化会变成 null，`distance > null` 恒真会导致双连障碍永远触发。
  * ========================================================== */
@@ -584,6 +584,7 @@ var DIFF = {
     desc:'跑得慢一点、障碍离得远一点，5 颗心陪你慢慢跑。',
     color:'#4caf6d', colorDark:'#2f7a46', glow:'rgba(76,175,109,.45)',
     speedBase:4.4,  rampDiv:1500, speedCap:4.4,
+    speedStepMeters:1000, speedStep:0, speedSteps:0,
     gapBase:620, gapMin:380, gapDiv:24, gapJitter:120,
     dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
     maxLives:5, invulnHit:130, invulnShield:100,
@@ -592,10 +593,11 @@ var DIFF = {
     pfInit:620,  pfBase:520,  pfJitter:420
   },
   normal: {
-    id:'normal', name:'普 通', short:'固定速度，4 颗心',
-    desc:'固定节奏，4 颗心，留出完整的跳跃和落地空间。',
+    id:'normal', name:'普 通', short:'每 1000 米小幅加速，4 颗心',
+    desc:'每跑 1000 米小幅加速一次，2000 米后封顶，4 颗心。',
     color:'#4a90d9', colorDark:'#2b6bb0', glow:'rgba(74,144,217,.45)',
-    speedBase:5.0,  rampDiv:900,  speedCap:5.0,
+    speedBase:5.0,  rampDiv:900,  speedCap:5.6,
+    speedStepMeters:1000, speedStep:0.3, speedSteps:2,
     gapBase:700, gapMin:560, gapDiv:36, gapJitter:140,
     dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
     maxLives:4, invulnHit:95, invulnShield:70,
@@ -604,10 +606,11 @@ var DIFF = {
     pfInit:760,  pfBase:620,  pfJitter:520
   },
   hard: {
-    id:'hard', name:'困 难', short:'稍快，3 颗心',
-    desc:'稍快的固定节奏，3 颗心，障碍之间可以稳定落地。',
+    id:'hard', name:'困 难', short:'每 1000 米小幅加速，3 颗心',
+    desc:'每跑 1000 米小幅加速一次，2000 米后封顶，3 颗心。',
     color:'#f28c28', colorDark:'#c26a12', glow:'rgba(242,140,40,.45)',
-    speedBase:5.6,  rampDiv:780,  speedCap:5.6,
+    speedBase:5.6,  rampDiv:780,  speedCap:6.2,
+    speedStepMeters:1000, speedStep:0.3, speedSteps:2,
     gapBase:720, gapMin:590, gapDiv:38, gapJitter:150,
     dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
     maxLives:3, invulnHit:75, invulnShield:58,
@@ -616,10 +619,11 @@ var DIFF = {
     pfInit:900,  pfBase:760,  pfJitter:600
   },
   nightmare: {
-    id:'nightmare', name:'噩 梦', short:'最快，2 颗心',
-    desc:'最快的固定节奏，2 颗心，但不会有连续贴脸障碍。',
+    id:'nightmare', name:'噩 梦', short:'每 1000 米小幅加速，2 颗心',
+    desc:'每跑 1000 米小幅加速一次，2000 米后封顶，2 颗心。',
     color:'#c2185b', colorDark:'#8e0e42', glow:'rgba(194,24,91,.45)',
-    speedBase:6.2,  rampDiv:700,  speedCap:6.2,
+    speedBase:6.2,  rampDiv:700,  speedCap:6.8,
+    speedStepMeters:1000, speedStep:0.3, speedSteps:2,
     gapBase:760, gapMin:620, gapDiv:45, gapJitter:160,
     dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
     maxLives:2, invulnHit:65, invulnShield:50,
@@ -634,6 +638,13 @@ var DIFF_ORDER = ['easy','normal','hard','nightmare'];
 var diffId = 'easy';
 
 function diffCfg(){ return DIFF[diffId] || DIFF.normal; }
+
+function speedForDistance(D, distance){
+  var meters = distance / 10;
+  var steps = Math.min(D.speedSteps || 0, Math.floor(meters / (D.speedStepMeters || 1000)));
+  if(steps === (D.speedSteps || 0)) return D.speedCap;
+  return Math.min(D.speedCap, D.speedBase + steps * (D.speedStep || 0));
+}
 
 /* ★ 守卫 B（R1/R2 双保险之一）：只有主菜单允许改难度。
      playing / paused 态下难度键与点击全部屏蔽 —— 否则 maxLives 变化会让
@@ -2004,9 +2015,9 @@ function update(dt){
   var c = CHARACTERS[Game.charId];
 
   /* --- 速度与距离 ---
-     每档的 speedBase 与 speedCap 设为相同，整局保持固定速度。 */
+     每 1000 米才进入下一档速度，避免短时间内连续加速。 */
   var D = diffCfg();
-  Game.speed = D.speedBase + Math.min(Game.distance / D.rampDiv, D.speedCap - D.speedBase);
+  Game.speed = speedForDistance(D, Game.distance);
   var move = Game.speed * dt;
   Game.distance += move;
   Game.scroll += move;
@@ -3249,7 +3260,7 @@ window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARA
                  diffBtnRect:diffBtnRect, diffHitRect:diffHitRect,
                  linkRect:linkRect,
                  obstacles:null, platforms:null, pickups:null,
-                 getDiffId:function(){ return diffId; },
+                 getDiffId:function(){ return diffId; }, speedForDistance:speedForDistance,
                  getTestActionState:testActionState,
                  getHover:function(){ return hoverDiff; },
                  getPressed:function(){ return pressedDiff; },
