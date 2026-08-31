@@ -573,9 +573,8 @@ canvas.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 /* ============================================================
  * 4.5 难度配置（速度曲线保持原样；高档位障碍间隔单独放宽）
  * ------------------------------------------------------------
- * 🔵 normal 档速度曲线与原硬编码保持一致：
- *    speedCap - speedBase = 12.0 - 5.6 === 6.4，速度仍保持相同。
- *    障碍生成间隔与双障碍安全距离则按本次平衡规则调整。
+ * 🔵 每档速度固定、不再随距离增加；高档位以少量固定速度差和生命数区分。
+ *    普通、困难、噩梦不再生成双障碍，确保一次跳跃只需处理一个障碍。
  * ⚠️ R8：easy 档 dblFrom 用 1e9 而非 Infinity —— Infinity 经 JSON
  *    序列化会变成 null，`distance > null` 恒真会导致双连障碍永远触发。
  * ========================================================== */
@@ -584,7 +583,7 @@ var DIFF = {
     id:'easy', name:'简 单', short:'轻松跑，5 颗心',
     desc:'跑得慢一点、障碍离得远一点，5 颗心陪你慢慢跑。',
     color:'#4caf6d', colorDark:'#2f7a46', glow:'rgba(76,175,109,.45)',
-    speedBase:4.4,  rampDiv:1500, speedCap:8.0,
+    speedBase:4.4,  rampDiv:1500, speedCap:4.4,
     gapBase:620, gapMin:380, gapDiv:24, gapJitter:120,
     dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
     maxLives:5, invulnHit:130, invulnShield:100,
@@ -593,37 +592,37 @@ var DIFF = {
     pfInit:620,  pfBase:520,  pfJitter:420
   },
   normal: {
-    id:'normal', name:'普 通', short:'标准速度，3 颗心',
-    desc:'标准节奏，跑得越远越快，3 颗心刚刚好。',
+    id:'normal', name:'普 通', short:'固定速度，4 颗心',
+    desc:'固定节奏，4 颗心，留出完整的跳跃和落地空间。',
     color:'#4a90d9', colorDark:'#2b6bb0', glow:'rgba(74,144,217,.45)',
-    speedBase:5.6,  rampDiv:900,  speedCap:12.0,
-    gapBase:520, gapMin:380, gapDiv:36, gapJitter:150,
-    dblFrom:3400, dblProb:0.06, doubleGap:520, doubleGapJitter:100,
-    maxLives:3, invulnHit:95, invulnShield:70,
+    speedBase:5.0,  rampDiv:900,  speedCap:5.0,
+    gapBase:700, gapMin:560, gapDiv:36, gapJitter:140,
+    dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
+    maxLives:4, invulnHit:95, invulnShield:70,
     pwInit:2600, pwBase:2300, pwJitter:2100,
     pkInit:380,  pkBase:420,  pkJitter:420,
     pfInit:760,  pfBase:620,  pfJitter:520
   },
   hard: {
-    id:'hard', name:'困 难', short:'很快，2 颗心',
-    desc:'更快更挤，双连障碍来得早，只有 2 颗心。',
+    id:'hard', name:'困 难', short:'稍快，3 颗心',
+    desc:'稍快的固定节奏，3 颗心，障碍之间可以稳定落地。',
     color:'#f28c28', colorDark:'#c26a12', glow:'rgba(242,140,40,.45)',
-    speedBase:6.2,  rampDiv:780,  speedCap:13.5,
-    gapBase:560, gapMin:440, gapDiv:38, gapJitter:160,
-    dblFrom:3000, dblProb:0.10, doubleGap:590, doubleGapJitter:110,
-    maxLives:2, invulnHit:75, invulnShield:58,
+    speedBase:5.6,  rampDiv:780,  speedCap:5.6,
+    gapBase:720, gapMin:590, gapDiv:38, gapJitter:150,
+    dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
+    maxLives:3, invulnHit:75, invulnShield:58,
     pwInit:3200, pwBase:2900, pwJitter:2600,
     pkInit:420,  pkBase:480,  pkJitter:460,
     pfInit:900,  pfBase:760,  pfJitter:600
   },
   nightmare: {
-    id:'nightmare', name:'噩 梦', short:'极快，只有 1 颗心',
-    desc:'极限速度，1 颗心，一次失误就得重来。',
+    id:'nightmare', name:'噩 梦', short:'最快，2 颗心',
+    desc:'最快的固定节奏，2 颗心，但不会有连续贴脸障碍。',
     color:'#c2185b', colorDark:'#8e0e42', glow:'rgba(194,24,91,.45)',
-    speedBase:7.0,  rampDiv:700,  speedCap:14.5,
-    gapBase:600, gapMin:500, gapDiv:45, gapJitter:170,
-    dblFrom:2600, dblProb:0.14, doubleGap:630, doubleGapJitter:120,
-    maxLives:1, invulnHit:65, invulnShield:50,
+    speedBase:6.2,  rampDiv:700,  speedCap:6.2,
+    gapBase:760, gapMin:620, gapDiv:45, gapJitter:160,
+    dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
+    maxLives:2, invulnHit:65, invulnShield:50,
     pwInit:3600, pwBase:3000, pwJitter:2600,
     pkInit:460,  pkBase:520,  pkJitter:480,
     pfInit:1000, pfBase:860,  pfJitter:680
@@ -2005,10 +2004,7 @@ function update(dt){
   var c = CHARACTERS[Game.charId];
 
   /* --- 速度与距离 ---
-     ★ A1 等价性：normal 档 = 5.6 + Math.min(distance/900, 6.4)，
-       因为 speedCap - speedBase = 12.0 - 5.6 === 6.4（IEEE754 位级相等）。
-       必须保持 `base + Math.min(x, cap-base)` 这个形式（而非
-       Math.min(base+x, cap)）才能与原式逐帧位级一致。 */
+     每档的 speedBase 与 speedCap 设为相同，整局保持固定速度。 */
   var D = diffCfg();
   Game.speed = D.speedBase + Math.min(Game.distance / D.rampDiv, D.speedCap - D.speedBase);
   var move = Game.speed * dt;
@@ -2179,7 +2175,7 @@ function update(dt){
 
   if(Game.nextObstacleAt <= 0){
     spawnObstacle();
-    /* 简单档永不双连；其他档的第二个障碍拉开到可落地再起跳的距离。 */
+    /* 当前四档均不生成双障碍，避免跳过一个后立刻撞上下一个。 */
     if(D.dblProb > 0 && Game.distance > D.dblFrom && Math.random() < D.dblProb){
       var last = obstacles[obstacles.length - 1];
       if(last) last.x += D.doubleGap + Math.random() * D.doubleGapJitter;

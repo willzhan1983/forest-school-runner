@@ -57,15 +57,18 @@ test('every 1000 points restores exactly one missing heart and advances the next
   );
 });
 
-test('non-easy difficulties leave a landing buffer before the next obstacle', async () => {
+test('difficulty levels use fixed speed, no double obstacles, and enough landing room', async () => {
   const fsr = await loadGame();
-  const levels = ['normal', 'hard', 'nightmare'].map(id => fsr.DIFF[id]);
+  const levels = ['easy', 'normal', 'hard', 'nightmare'].map(id => fsr.DIFF[id]);
 
   for (const level of levels) {
-    assert.ok(level.gapMin / level.speedCap >= 31, level.id + ' keeps at least 31 frames between regular obstacles');
-    assert.ok(level.doubleGap / level.speedCap >= 43, level.id + ' keeps at least 43 frames between double obstacles');
+    assert.equal(level.speedBase, level.speedCap, level.id + ' speed stays fixed for the whole run');
+    assert.equal(level.dblProb, 0, level.id + ' has no double obstacles');
   }
-  assert.equal(fsr.DIFF.easy.dblProb, 0);
+  for (const level of levels.slice(1)) {
+    assert.ok(level.gapMin / level.speedCap >= 100, level.id + ' keeps at least 100 frames between regular obstacles');
+  }
+  assert.deepEqual(levels.map(level => level.maxLives), [5, 4, 3, 2]);
 });
 
 test('the completion screen selects the Win action while menu preview remains Idle', async () => {

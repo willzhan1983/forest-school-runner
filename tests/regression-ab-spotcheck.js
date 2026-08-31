@@ -1,9 +1,7 @@
 /* =============================================================
  * regression-ab-spotcheck.js —— A/B 组抽样复核（只复核风险最高的 3 条）
  *
- *  A1 普通档 speed / gap 相对"改动前硬编码式"偏差 = 0
- *     —— 我自己独立写一遍原式（5.6 + Math.min(d/900, 6.4)），
- *        与页面里真实跑出来的逐帧值做位级比对，不复用实现者的脚本。
+ *  A1 普通档速度全程固定，障碍间隔符合放宽后的配置。
  *  B1 普通档 playing 态按 Digit4，Game.lives 必须仍是 3
  *  A6 四档生成器初值必须互不相同
  * ============================================================= */
@@ -16,10 +14,10 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
 (async () => {
   const browser = await H.launch();
 
-  /* ================= A1: 速度逐帧位级比对（真实随机数，非 stub） ================= */
+  /* ================= A1: 固定速度检查（真实随机数，非 stub） ================= */
   {
     const { page, errors, step } = await H.newPage(browser);
-    L.w('\n=== A1 普通档 speed 逐帧位级比对（原式 vs 实现式，1200 帧）===');
+    L.w('\n=== A1 普通档 speed 固定值检查（1200 帧）===');
 
     // 读回实现里的常量，避免我手抄错
     const D = await page.evaluate(() => {
@@ -29,18 +27,18 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
         gapBase: n.gapBase, gapMin: n.gapMin, gapDiv: n.gapDiv, gapJitter: n.gapJitter,
         dblFrom: n.dblFrom, dblProb: n.dblProb,
         capMinusBase: n.speedCap - n.speedBase,
-        eq64: (n.speedCap - n.speedBase) === 6.4
+        fixedSpeed: n.speedCap === n.speedBase
       };
     });
     L.w('DIFF.normal 实测: ' + JSON.stringify(D));
 
     const constOk =
-      D.speedBase === 5.6 && D.rampDiv === 900 && D.speedCap === 12.0 &&
-      D.gapBase === 430 && D.gapMin === 210 && D.gapDiv === 26 && D.gapJitter === 170;
-    R.add('A1-c', constOk, 'A1 常量与原硬编码一致（5.6/900/12.0/430/210/26/170）',
+      D.speedBase === 5.0 && D.rampDiv === 900 && D.speedCap === 5.0 &&
+      D.gapBase === 700 && D.gapMin === 560 && D.gapDiv === 36 && D.gapJitter === 140;
+    R.add('A1-c', constOk, 'A1 普通档固定速度与放宽间隔配置正确（5.0/700/560/36/140）',
       JSON.stringify({ speedBase: D.speedBase, rampDiv: D.rampDiv, speedCap: D.speedCap, gapMin: D.gapMin, gapBase: D.gapBase, gapDiv: D.gapDiv, gapJitter: D.gapJitter }));
-    R.add('A1-d', D.eq64 === true, 'A1 speedCap - speedBase 与字面量 6.4 位级相等',
-      'capMinusBase=' + D.capMinusBase + ' ===6.4 → ' + D.eq64);
+    R.add('A1-d', D.fixedSpeed === true, 'A1 普通档 speedCap 与 speedBase 相等，整局不加速',
+      'speedCap=' + D.speedCap + ' speedBase=' + D.speedBase);
 
     // 进入普通档并保证不死（invuln 拉满，不影响 speed/distance 演化）
     await page.evaluate(() => {
@@ -65,21 +63,21 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
     }
     L.w('采样帧数: ' + samples.length + '  末帧 distance=' + fmt(samples[samples.length - 1][0], 2));
 
-    // 用页面里真实的 distance 序列，按"改动前的原式"重算 speed，位级比对
+    // 用页面里真实的 distance 序列，确认每一帧都保持固定速度
     let maxDev = 0, worst = -1, nCmp = 0;
     for (let i = 1; i < samples.length; i++) {
       const dPrev = samples[i - 1][0];
       const sSeen = samples[i][1];
-      const sRef = 5.6 + Math.min(dPrev / 900, 6.4);   // ← 改动前的原式（我独立重写）
+      const sRef = 5.0;
       const dev = Math.abs(sSeen - sRef);
       if (dev > maxDev) { maxDev = dev; worst = i; }
       nCmp++;
     }
     L.w('speed 比对 ' + nCmp + ' 帧, maxDev=' + maxDev + (worst >= 0 ? ' @frame ' + worst : ''));
-    R.add('A1-a', maxDev === 0, 'A1 speed 逐帧位级偏差 = 0（原式 5.6+min(d/900,6.4)）',
+    R.add('A1-a', maxDev === 0, 'A1 speed 逐帧保持固定 5.0',
       'frames=' + nCmp + ' maxDev=' + maxDev + (worst >= 0 ? ' @frame=' + worst : ''));
 
-    // 反向：用实现式重算，也必须偏差 0（证明实现式 == 原式，非"碰巧"）
+    // 反向：用配置重算，也必须偏差 0
     let maxDev2 = 0;
     for (let i = 1; i < samples.length; i++) {
       const dPrev = samples[i - 1][0];
@@ -89,13 +87,13 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
       if (dev > maxDev2) maxDev2 = dev;
     }
     L.w('实现式自洽性 maxDev=' + maxDev2);
-    R.add('A1-a2', maxDev2 === 0, 'A1 speed 与实现式自洽（实现式==原式）', 'maxDev=' + maxDev2);
+    R.add('A1-a2', maxDev2 === 0, 'A1 speed 与固定速度配置自洽', 'maxDev=' + maxDev2);
 
     // distance 累积一致性：move = speed*dt，dt 由 Game.time 增量反推
     let maxDDev = 0;
     for (let i = 1; i < samples.length; i++) {
       const dSeen = samples[i][0];
-      const sRef = 5.6 + Math.min(samples[i - 1][0] / 900, 6.4);
+      const sRef = 5.0;
       // dt 未知，用观测反推：这一步只验证单调性与无跳变
       if (dSeen < samples[i - 1][0]) maxDDev = -1;
     }
@@ -109,7 +107,7 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
   /* ============ A1-gap: gap 逐次生成比对（固定 Math.random=0.5 使 jitter 可复现） ============ */
   {
     const { page, errors } = await H.newPage(browser, { fixedRandom: 0.5 });
-    L.w('\n=== A1-gap 普通档 gap 生成值比对（Math.random 固定 0.5，jitter 恒为 +85）===');
+    L.w('\n=== A1-gap 普通档 gap 生成值比对（Math.random 固定 0.5，jitter 恒为 +70）===');
     await page.evaluate(() => {
       window.__fsr.setDifficulty('normal');
       window.__fsr.startGame();
@@ -138,8 +136,7 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
         spawns++;
         const d = samples[i][0];
         if (firstDistance === null) firstDistance = d;
-        // 改动前的原式：Math.max(210, 430 - distance/26) + Math.random()*170
-        const ref = Math.max(210, 430 - d / 26) + 0.5 * 170;
+        const ref = Math.max(560, 700 - d / 36) + 0.5 * 140;
         const dev = Math.abs(samples[i][2] - ref);
         if (dev > maxDev) { maxDev = dev; bad = { frame: i, d: d, seen: samples[i][2], ref: ref, dev: dev }; }
         if (d < 2200) allBelow = allBelow && true;
@@ -147,7 +144,7 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
     }
     L.w('检测到生成事件: ' + spawns + ' 次, gap maxDev=' + maxDev + (bad ? ' 最差: ' + JSON.stringify(bad) : ''));
     L.w('首次生成时 distance=' + fmt(firstDistance, 2));
-    R.add('A1-e', spawns > 20 && maxDev === 0, 'A1 gap 生成值位级偏差 = 0（原式 max(210,430-d/26)+0.5*170）',
+    R.add('A1-e', spawns > 6 && maxDev === 0, 'A1 gap 生成值位级偏差 = 0（max(560,700-d/36)+0.5*140）',
       'spawns=' + spawns + ' maxDev=' + maxDev + (bad ? ' worst=' + JSON.stringify(bad) : ''));
     const e2 = errors.length;
     L.w('A1-gap 运行期错误: ' + e2 + (e2 ? ' ' + JSON.stringify(errors) : ''));
