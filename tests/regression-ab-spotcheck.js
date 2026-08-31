@@ -33,10 +33,10 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
     L.w('DIFF.normal 实测: ' + JSON.stringify(D));
 
     const constOk =
-      D.speedBase === 5.0 && D.rampDiv === 900 && D.speedCap === 5.6 &&
-      D.speedStepMeters === 1000 && D.speedStep === 0.3 && D.speedSteps === 2 &&
+      D.speedBase === 5.0 && D.rampDiv === 900 && D.speedCap === 6.0 &&
+      D.speedStepMeters === 1000 && D.speedStep === 0.5 && D.speedSteps === 2 &&
       D.gapBase === 700 && D.gapMin === 560 && D.gapDiv === 36 && D.gapJitter === 140;
-    R.add('A1-c', constOk, 'A1 普通档里程速度与放宽间隔配置正确（5.0→5.3→5.6）',
+    R.add('A1-c', constOk, 'A1 普通档里程速度与放宽间隔配置正确（5.0→5.5→6.0）',
       JSON.stringify({ speedBase: D.speedBase, rampDiv: D.rampDiv, speedCap: D.speedCap, gapMin: D.gapMin, gapBase: D.gapBase, gapDiv: D.gapDiv, gapJitter: D.gapJitter }));
     R.add('A1-d', D.speedStepMeters === 1000 && D.speedSteps === 2, 'A1 普通档仅在 1000 米与 2000 米进入下一档速度',
       'stepMeters=' + D.speedStepMeters + ' steps=' + D.speedSteps);
