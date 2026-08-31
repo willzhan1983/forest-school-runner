@@ -57,7 +57,7 @@ test('every 1000 points restores exactly one missing heart and advances the next
   );
 });
 
-test('difficulty levels step speed only at 1000 m milestones and keep safe spacing', async () => {
+test('difficulty levels keep gradually accelerating at 1000 m milestones with safe spacing', async () => {
   const fsr = await loadGame();
   const levels = ['easy', 'normal', 'hard', 'nightmare'].map(id => fsr.DIFF[id]);
 
@@ -65,12 +65,13 @@ test('difficulty levels step speed only at 1000 m milestones and keep safe spaci
     assert.equal(fsr.speedForDistance(level, 0), level.speedBase, level.id + ' starts at its base speed');
     assert.equal(fsr.speedForDistance(level, 9999), level.speedBase, level.id + ' does not accelerate before 1000 m');
     assert.equal(fsr.speedForDistance(level, 10000), level.speedBase + level.speedStep, level.id + ' steps up at 1000 m');
-    assert.equal(fsr.speedForDistance(level, 20000), level.speedCap, level.id + ' reaches its cap at 2000 m');
-    assert.equal(fsr.speedForDistance(level, 50000), level.speedCap, level.id + ' stays capped after 2000 m');
+    assert.equal(fsr.speedForDistance(level, 20000), level.speedBase + level.speedStep * 2, level.id + ' steps up again at 2000 m');
+    assert.equal(fsr.speedForDistance(level, 50000), level.speedBase + level.speedStep * 5, level.id + ' keeps accelerating after 2000 m');
+    assert.ok(level.gapSpeedFactor >= 100, level.id + ' expands obstacle gaps as speed rises');
+    const longRunSpeed = fsr.speedForDistance(level, 100000);
+    assert.ok(fsr.obstacleGapFor(level, 100000, longRunSpeed) / longRunSpeed >= level.gapSpeedFactor,
+      level.id + ' keeps the same obstacle reaction time during a long run');
     assert.equal(level.dblProb, 0, level.id + ' has no double obstacles');
-  }
-  for (const level of levels.slice(1)) {
-    assert.ok(level.gapMin / level.speedCap >= 90, level.id + ' keeps enough room between regular obstacles at top speed');
   }
   assert.equal(fsr.speedForDistance(levels[0], 50000), levels[0].speedBase);
   assert.deepEqual(levels.map(level => level.maxLives), [5, 4, 3, 2]);

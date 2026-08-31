@@ -23,23 +23,22 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
     const D = await page.evaluate(() => {
       const n = window.__fsr.DIFF.normal;
       return {
-        speedBase: n.speedBase, rampDiv: n.rampDiv, speedCap: n.speedCap,
+        speedBase: n.speedBase, rampDiv: n.rampDiv,
         gapBase: n.gapBase, gapMin: n.gapMin, gapDiv: n.gapDiv, gapJitter: n.gapJitter,
         dblFrom: n.dblFrom, dblProb: n.dblProb,
-        capMinusBase: n.speedCap - n.speedBase,
-        speedStepMeters: n.speedStepMeters, speedStep: n.speedStep, speedSteps: n.speedSteps
+        speedStepMeters: n.speedStepMeters, speedStep: n.speedStep, gapSpeedFactor: n.gapSpeedFactor
       };
     });
     L.w('DIFF.normal 实测: ' + JSON.stringify(D));
 
     const constOk =
-      D.speedBase === 5.0 && D.rampDiv === 900 && D.speedCap === 6.0 &&
-      D.speedStepMeters === 1000 && D.speedStep === 0.5 && D.speedSteps === 2 &&
+      D.speedBase === 5.0 && D.rampDiv === 900 &&
+      D.speedStepMeters === 1000 && D.speedStep === 0.2 && D.gapSpeedFactor === 110 &&
       D.gapBase === 700 && D.gapMin === 560 && D.gapDiv === 36 && D.gapJitter === 140;
-    R.add('A1-c', constOk, 'A1 普通档里程速度与放宽间隔配置正确（5.0→5.5→6.0）',
-      JSON.stringify({ speedBase: D.speedBase, rampDiv: D.rampDiv, speedCap: D.speedCap, gapMin: D.gapMin, gapBase: D.gapBase, gapDiv: D.gapDiv, gapJitter: D.gapJitter }));
-    R.add('A1-d', D.speedStepMeters === 1000 && D.speedSteps === 2, 'A1 普通档仅在 1000 米与 2000 米进入下一档速度',
-      'stepMeters=' + D.speedStepMeters + ' steps=' + D.speedSteps);
+    R.add('A1-c', constOk, 'A1 普通档里程速度与动态安全间隔配置正确（5.0→5.2→5.4……）',
+      JSON.stringify({ speedBase: D.speedBase, rampDiv: D.rampDiv, gapMin: D.gapMin, gapBase: D.gapBase, gapDiv: D.gapDiv, gapJitter: D.gapJitter, gapSpeedFactor: D.gapSpeedFactor }));
+    R.add('A1-d', D.speedStepMeters === 1000 && D.speedStep === 0.2, 'A1 普通档每 1000 米逐步提速且不封顶',
+      'stepMeters=' + D.speedStepMeters + ' step=' + D.speedStep);
 
     // 进入普通档并保证不死（invuln 拉满，不影响 speed/distance 演化）
     await page.evaluate(() => {
@@ -84,8 +83,8 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
       const dPrev = samples[i - 1][0];
       const sSeen = samples[i][1];
       const meters = dPrev / 10;
-      const steps = Math.min(D.speedSteps, Math.floor(meters / D.speedStepMeters));
-      const sImpl = Math.min(D.speedCap, D.speedBase + steps * D.speedStep);
+      const steps = Math.floor(meters / D.speedStepMeters);
+      const sImpl = D.speedBase + steps * D.speedStep;
       const dev = Math.abs(sSeen - sImpl);
       if (dev > maxDev2) maxDev2 = dev;
     }
