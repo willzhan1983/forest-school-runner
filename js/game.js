@@ -380,6 +380,8 @@ function musicBtnRect(){ return {x:80,y:14,w:56,h:56}; }
 /* 菜单页的音乐开关放左上角：菜单页没有暂停按钮，且该区域
    （x 14..70 / y 14..70）与标题、难度按钮、角色卡、开始按钮均不重叠。 */
 function menuMusicBtnRect(){ return {x:14, y:14, w:56, h:56}; }
+/* 菜单页右上角：跳转到课间小游戏合集 */
+function linkRect(){ return {x:850, y:14, w:96, h:44}; }
 
 canvas.addEventListener('pointerdown', function(e){
   e.preventDefault(); Audio2.init(); Audio2.kick();
@@ -2311,6 +2313,8 @@ function drawMenu(){
 
   /* 音乐开关（菜单页左上角，游戏中 HUD 里也复用同一个绘制函数） */
   drawMusicBtn(menuMusicBtnRect());
+  /* 课间小游戏合集入口（右上角） */
+  drawLinkBtn(linkRect());
 
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
@@ -2354,6 +2358,18 @@ function drawMusicBtn(mr){
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+}
+
+function drawLinkBtn(r){
+  /* 菜单页右上角：跳转到课间小游戏合集 */
+  ctx.fillStyle = 'rgba(74,144,217,.95)';
+  roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
+  ctx.strokeStyle = '#2b6bb0'; ctx.lineWidth = 2;
+  roundRect(r.x, r.y, r.w, r.h, 10); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = '500 15px system-ui,sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'central';
+  ctx.fillText('课间游戏', r.x + r.w / 2, r.y + r.h / 2 + 1);
 }
 
 function drawHUD(){
@@ -2562,6 +2578,7 @@ function handleMenuTap(x, y){
       }
     }
     if(hitRect(x, y, menuMusicBtnRect())){ Audio2.toggleMusic(); return; }
+    if(hitRect(x, y, linkRect())){ Audio2.click(); window.open('https://willzhan1983.github.io/forest-school-games/', '_blank'); return; }
     if(hitRect(x, y, picBtnRect(0))){ pickPic('cat'); return; }
     if(hitRect(x, y, picBtnRect(1))){ pickPic('owl'); return; }
     if(hitRect(x, y, cardRect(0))){ Game.charId = 'cat'; Audio2.click(); return; }
@@ -2839,6 +2856,7 @@ window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARA
                  applyDifficulty:applyDifficulty, setDifficulty:setDifficulty,
                  diffCanSwitch:diffCanSwitch,
                  diffBtnRect:diffBtnRect, diffHitRect:diffHitRect,
+                 linkRect:linkRect,
                  obstacles:null, platforms:null, pickups:null,
                  getDiffId:function(){ return diffId; },
                  getHover:function(){ return hoverDiff; },
