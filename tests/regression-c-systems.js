@@ -202,7 +202,7 @@ const R = H.results();
     await step(4);
     const a5 = await A(); L.w('  恢复: ' + JSON.stringify(a5));
 
-    // 结算应停 BGM
+    // 结算页 BGM 延续到结算页（PR #2 改动），不再自动停
     await page.evaluate(() => window.__fsr.gameOver());
     await step(3);
     const a6 = await A(); L.w('  结算: ' + JSON.stringify(a6));
@@ -232,7 +232,7 @@ const R = H.results();
       R.add('C4-c', a3.musicOn === true && a3.musicCtx === true, 'C4 重新开启后 BGM 续播', JSON.stringify(a3));
       R.add('C4-d', a4.musicCtx === false, 'C4 暂停自动停 BGM', JSON.stringify(a4));
       R.add('C4-e', a5.musicCtx === true, 'C4 恢复自动续 BGM', JSON.stringify(a5));
-      R.add('C4-g', a6.musicCtx === false, 'C4 结算自动停 BGM', JSON.stringify(a6));
+      R.add('C4-g', a6.musicCtx === true, 'C4 结算页 BGM 延续', JSON.stringify(a6));
       R.add('C4-h', a2.ls === '0' && a3.ls === '1', 'C4 音乐开关写入 localStorage 持久化',
         'off=' + a2.ls + ' on=' + a3.ls);
     }
