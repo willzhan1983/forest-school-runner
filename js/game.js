@@ -650,6 +650,13 @@ function obstacleGapFor(D, distance, speed){
                   speed * (D.gapSpeedFactor || 0));
 }
 
+function hitsObstacle(px, py, pw, ph, ob, previousX){
+  var overlapsNow = px < ob.x + ob.w - 4 && px + pw > ob.x + 4;
+  var crossedThisFrame = previousX !== undefined &&
+    px < previousX + ob.w - 4 && px + pw > ob.x + 4;
+  return (overlapsNow || crossedThisFrame) && py < ob.y + ob.h && py + ph > ob.y + 4;
+}
+
 /* ★ 守卫 B（R1/R2 双保险之一）：只有主菜单允许改难度。
      playing / paused 态下难度键与点击全部屏蔽 —— 否则 maxLives 变化会让
      HUD 心形数量中途改变、速度/间距突变，普通 3 命 → 噩梦 1 命会瞬间致死。
@@ -2136,6 +2143,7 @@ function update(dt){
   var k;
   for(k = obstacles.length - 1; k >= 0; k--){
     var o = obstacles[k];
+    o.previousX = o.x;
     o.x -= move;
     if(o.dead){
       o.deadT -= dt; o.deadRot += 0.14 * dt; o.y -= 1.2 * dt;
@@ -2233,7 +2241,7 @@ function update(dt){
   for(k = 0; k < obstacles.length; k++){
     var ob = obstacles[k];
     if(ob.dead) continue;
-    if(px < ob.x + ob.w - 4 && px + pw > ob.x + 4 && py < ob.y + ob.h && py + ph > ob.y + 4){
+    if(hitsObstacle(px, py, pw, ph, ob, ob.previousX)){
       if(p.dashing || p.dashImpactTimer > 0){
         ob.dead = true; ob.deadT = 26; ob.deadRot = 0;
         addScore(25);
@@ -3264,7 +3272,7 @@ window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARA
                  diffBtnRect:diffBtnRect, diffHitRect:diffHitRect,
                  linkRect:linkRect,
                  obstacles:null, platforms:null, pickups:null,
-                 getDiffId:function(){ return diffId; }, speedForDistance:speedForDistance, obstacleGapFor:obstacleGapFor,
+                 getDiffId:function(){ return diffId; }, speedForDistance:speedForDistance, obstacleGapFor:obstacleGapFor, hitsObstacle:hitsObstacle,
                  getTestActionState:testActionState,
                  getHover:function(){ return hoverDiff; },
                  getPressed:function(){ return pressedDiff; },

@@ -77,6 +77,17 @@ test('difficulty levels keep gradually accelerating at 1000 m milestones with sa
   assert.deepEqual(levels.map(level => level.maxLives), [5, 4, 3, 2]);
 });
 
+test('high-speed obstacles keep collision detection across a single frame', async () => {
+  const fsr = await loadGame();
+  const player = { x:120, y:390, w:52, h:68 };
+  const obstacle = { x:40, y:390, w:52, h:68 };
+
+  assert.equal(fsr.hitsObstacle(player.x, player.y, player.w, player.h, obstacle, 220), true,
+    'an obstacle crossing the player in one fast frame still hits');
+  assert.equal(fsr.hitsObstacle(player.x, 260, player.w, player.h, obstacle, 220), false,
+    'a jump above a crossing obstacle remains safe');
+});
+
 test('the completion screen selects the Win action while menu preview remains Idle', async () => {
   const fsr = await loadGame();
   const p = { preview:false, hurtTimer:0, dashing:false, gliding:false, sliding:false, grounded:true, landTimer:0, vy:0 };
