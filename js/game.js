@@ -571,11 +571,11 @@ canvas.addEventListener('pointercancel', function(){ Input.pointerDown=false; In
 canvas.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 
 /* ============================================================
- * 4.5 难度配置（DIFF-001 数值表 / DIFF-002 实现）
+ * 4.5 难度配置（速度曲线保持原样；高档位障碍间隔单独放宽）
  * ------------------------------------------------------------
- * 🔵 normal 档所有数值与原硬编码「代数恒等」，非近似：
- *    speedCap - speedBase = 12.0 - 5.6 === 6.4（IEEE754 位级相等，已验证）
- *    故 Game.speed / gap / 双连 / 生成间隔 在 normal 档逐帧不变。
+ * 🔵 normal 档速度曲线与原硬编码保持一致：
+ *    speedCap - speedBase = 12.0 - 5.6 === 6.4，速度仍保持相同。
+ *    障碍生成间隔与双障碍安全距离则按本次平衡规则调整。
  * ⚠️ R8：easy 档 dblFrom 用 1e9 而非 Infinity —— Infinity 经 JSON
  *    序列化会变成 null，`distance > null` 恒真会导致双连障碍永远触发。
  * ========================================================== */
@@ -586,7 +586,7 @@ var DIFF = {
     color:'#4caf6d', colorDark:'#2f7a46', glow:'rgba(76,175,109,.45)',
     speedBase:4.4,  rampDiv:1500, speedCap:8.0,
     gapBase:620, gapMin:380, gapDiv:24, gapJitter:120,
-    dblFrom:1e9, dblProb:0,
+    dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
     maxLives:5, invulnHit:130, invulnShield:100,
     pwInit:1300, pwBase:1150, pwJitter:1050,
     pkInit:340,  pkBase:380,  pkJitter:380,
@@ -597,8 +597,8 @@ var DIFF = {
     desc:'标准节奏，跑得越远越快，3 颗心刚刚好。',
     color:'#4a90d9', colorDark:'#2b6bb0', glow:'rgba(74,144,217,.45)',
     speedBase:5.6,  rampDiv:900,  speedCap:12.0,
-    gapBase:430, gapMin:210, gapDiv:26, gapJitter:170,
-    dblFrom:2200, dblProb:0.22,
+    gapBase:520, gapMin:380, gapDiv:36, gapJitter:150,
+    dblFrom:3400, dblProb:0.06, doubleGap:520, doubleGapJitter:100,
     maxLives:3, invulnHit:95, invulnShield:70,
     pwInit:2600, pwBase:2300, pwJitter:2100,
     pkInit:380,  pkBase:420,  pkJitter:420,
@@ -609,8 +609,8 @@ var DIFF = {
     desc:'更快更挤，双连障碍来得早，只有 2 颗心。',
     color:'#f28c28', colorDark:'#c26a12', glow:'rgba(242,140,40,.45)',
     speedBase:6.2,  rampDiv:780,  speedCap:13.5,
-    gapBase:400, gapMin:190, gapDiv:27, gapJitter:170,
-    dblFrom:1400, dblProb:0.34,
+    gapBase:560, gapMin:440, gapDiv:38, gapJitter:160,
+    dblFrom:3000, dblProb:0.10, doubleGap:590, doubleGapJitter:110,
     maxLives:2, invulnHit:75, invulnShield:58,
     pwInit:3200, pwBase:2900, pwJitter:2600,
     pkInit:420,  pkBase:480,  pkJitter:460,
@@ -621,8 +621,8 @@ var DIFF = {
     desc:'极限速度，1 颗心，一次失误就得重来。',
     color:'#c2185b', colorDark:'#8e0e42', glow:'rgba(194,24,91,.45)',
     speedBase:7.0,  rampDiv:700,  speedCap:14.5,
-    gapBase:380, gapMin:175, gapDiv:27, gapJitter:150,
-    dblFrom:1200, dblProb:0.42,
+    gapBase:600, gapMin:500, gapDiv:45, gapJitter:170,
+    dblFrom:2600, dblProb:0.14, doubleGap:630, doubleGapJitter:120,
     maxLives:1, invulnHit:65, invulnShield:50,
     pwInit:3600, pwBase:3000, pwJitter:2600,
     pkInit:460,  pkBase:520,  pkJitter:480,
@@ -2179,11 +2179,10 @@ function update(dt){
 
   if(Game.nextObstacleAt <= 0){
     spawnObstacle();
-    /* ★ R8/短路顺序：dblProb > 0 放在最前，easy 档（dblProb=0, dblFrom=1e9）
-       永不进入分支，且不消耗随机数 —— normal 档的 RNG 调用序列与原版完全一致。 */
+    /* 简单档永不双连；其他档的第二个障碍拉开到可落地再起跳的距离。 */
     if(D.dblProb > 0 && Game.distance > D.dblFrom && Math.random() < D.dblProb){
       var last = obstacles[obstacles.length - 1];
-      if(last) last.x += 74 + Math.random() * 40;
+      if(last) last.x += D.doubleGap + Math.random() * D.doubleGapJitter;
       spawnObstacle();
     }
     var gap = Math.max(D.gapMin, D.gapBase - Game.distance / D.gapDiv);

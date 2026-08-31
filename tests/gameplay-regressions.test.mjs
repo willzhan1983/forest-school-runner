@@ -57,6 +57,17 @@ test('every 1000 points restores exactly one missing heart and advances the next
   );
 });
 
+test('non-easy difficulties leave a landing buffer before the next obstacle', async () => {
+  const fsr = await loadGame();
+  const levels = ['normal', 'hard', 'nightmare'].map(id => fsr.DIFF[id]);
+
+  for (const level of levels) {
+    assert.ok(level.gapMin / level.speedCap >= 31, level.id + ' keeps at least 31 frames between regular obstacles');
+    assert.ok(level.doubleGap / level.speedCap >= 43, level.id + ' keeps at least 43 frames between double obstacles');
+  }
+  assert.equal(fsr.DIFF.easy.dblProb, 0);
+});
+
 test('the completion screen selects the Win action while menu preview remains Idle', async () => {
   const fsr = await loadGame();
   const p = { preview:false, hurtTimer:0, dashing:false, gliding:false, sliding:false, grounded:true, landTimer:0, vy:0 };
