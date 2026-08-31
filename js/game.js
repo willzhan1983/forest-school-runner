@@ -49,6 +49,68 @@ const CHARACTERS = {
 /* 测试素材只在 URL 带 ?testSprites=1 时加载；默认继续使用现有角色与回退逻辑。 */
 const USE_EXTRACTED_TEST_SPRITES = typeof URLSearchParams !== 'undefined' &&
   !!(window.location && new URLSearchParams(window.location.search || '').has('testSprites'));
+/* 场景美术测试兼容旧 ?testForestAssets=1 链接；加载失败时仍使用原 Canvas 画面。 */
+const USE_TEST_SCENE_ASSETS = typeof URLSearchParams !== 'undefined' &&
+  !!(window.location && (new URLSearchParams(window.location.search || '').has('testForestAssets') ||
+    new URLSearchParams(window.location.search || '').has('testSceneAssets')));
+const TEST_SCENE_ASSETS = {
+  forest:{ distant:null, middle:null, foreground:null, canopy:null, log:null },
+  classroom:{ distant:null, middle:null, foreground:null },
+  treehouse:{ distant:null, middle:null, foreground:null }
+};
+const TEST_SCENE_FILES = {
+  forest:{ distant:'assets/backgrounds/forest/v1-test/distant-lake.png', middle:'assets/backgrounds/forest/v1-test/middle-treeline.png', foreground:'assets/backgrounds/forest/v1-test/foreground-bushes.png', canopy:'assets/backgrounds/forest/v1-test/canopy-frame.png', log:'assets/obstacles/forest/v1-test/fallen-log.png' },
+  classroom:{ distant:'assets/backgrounds/classroom/v1-test/distant-classroom.png', middle:'assets/backgrounds/classroom/v1-test/middle-schoolyard.png', foreground:'assets/backgrounds/classroom/v1-test/foreground-stationery.png' },
+  treehouse:{ distant:'assets/backgrounds/treehouse/v1-test/distant-treehouses.png', middle:'assets/backgrounds/treehouse/v1-test/middle-lanterns.png', foreground:'assets/backgrounds/treehouse/v1-test/foreground-moss.png' }
+};
+const TEST_OBJECT_ASSETS = {
+  forestThorn:null, classroomDesk:null, treehouseCrate:null,
+  acorn:null, book:null, shield:null, magnet:null, double:null,
+  forestPlatform:null, classroomPlatform:null, treehousePlatform:null,
+  forestRock:null, forestStump:null, classroomBooks:null,
+  treehouseBranch:null, treehouseRock:null,
+  forestBranch:null, classroomCrate:null, treehouseStump:null
+};
+const TEST_OBJECT_FILES = {
+  forestThorn:'assets/obstacles/forest/v2-test/thorn-bramble.png',
+  classroomDesk:'assets/obstacles/classroom/v2-test/desk-books.png',
+  treehouseCrate:'assets/obstacles/treehouse/v2-test/moss-crate.png',
+  acorn:'assets/items/v2-test/acorn.png',
+  book:'assets/items/v2-test/book.png',
+  shield:'assets/items/v2-test/shield.png',
+  magnet:'assets/items/v2-test/magnet.png',
+  double:'assets/items/v2-test/double.png',
+  forestPlatform:'assets/platforms/forest/v2-test/moss-log.png',
+  classroomPlatform:'assets/platforms/classroom/v2-test/desk-platform.png',
+  treehousePlatform:'assets/platforms/treehouse/v2-test/vine-plank.png',
+  forestRock:'assets/obstacles/forest/v3-test/moss-rock.png',
+  forestStump:'assets/obstacles/forest/v3-test/moss-stump.png',
+  classroomBooks:'assets/obstacles/classroom/v3-test/book-stack.png',
+  treehouseBranch:'assets/obstacles/treehouse/v3-test/fallen-branch.png',
+  treehouseRock:'assets/obstacles/treehouse/v3-test/moss-rock.png',
+  forestBranch:'assets/obstacles/forest/v4-test/fallen-branch.png',
+  classroomCrate:'assets/obstacles/classroom/v4-test/supply-crate.png',
+  treehouseStump:'assets/obstacles/treehouse/v4-test/vine-stump.png'
+};
+
+function loadTestSceneAssets(){
+  if(!USE_TEST_SCENE_ASSETS) return;
+  Object.keys(TEST_SCENE_FILES).forEach(function(themeId){
+    Object.keys(TEST_SCENE_FILES[themeId]).forEach(function(key){
+      var img = new Image();
+      TEST_SCENE_ASSETS[themeId][key] = img;
+      img.src = TEST_SCENE_FILES[themeId][key];
+    });
+  });
+}
+function loadTestObjectAssets(){
+  if(!USE_TEST_SCENE_ASSETS) return;
+  Object.keys(TEST_OBJECT_FILES).forEach(function(key){
+    var img = new Image();
+    TEST_OBJECT_ASSETS[key] = img;
+    img.src = TEST_OBJECT_FILES[key];
+  });
+}
 const TEST_SPRITE_FILES = {
   cat:{
     idle:'idle.png', run:['run_01.png','run_02.png','run_03.png','run_04.png'],
@@ -96,6 +158,8 @@ function testActionSprite(c, p){
 }
 
 loadTestActionSprites();
+loadTestSceneAssets();
+loadTestObjectAssets();
 Object.values(CHARACTERS).forEach(function(c){
   if(c.spriteSrc){
     var img = new Image();
@@ -607,7 +671,7 @@ var THEMES = [
 /* ===== 6. 游戏状态 ===== */
 var Game = {
   state:'menu', charId:'cat', paused:false,
-  score:0, books:0, acorns:0, lives:3, maxLives:3, nextHealScore:100,
+  score:0, books:0, acorns:0, lives:3, maxLives:3, nextHealScore:1000,
   distance:0, best:0, leaderboard:[], speed:5.6,
   themeIndex:0, time:0, shake:0, banner:0, flash:0
 };
@@ -631,9 +695,9 @@ function recordLeaderboardScore(){
   var board = Game.leaderboard;
   if(score <= 0 || (board.length >= LEADERBOARD_LIMIT && score <= board[board.length - 1].score)) return;
   var fallback = CHARACTERS[Game.charId].name;
-  var entered = window.prompt('进入家庭积分榜！请输入昵称（最多 8 个字）', fallback);
-  var name = (entered || fallback).trim().slice(0, 8) || fallback;
-  board.push({ name:name, score:score, charId:Game.charId, date:Date.now() });
+  /* 结束流程由动画帧触发；手机浏览器会阻塞此处的系统输入框，导致结算页无法显示。
+     家庭榜直接使用当前角色名，确保生命归零后能立即切到结算页。 */
+  board.push({ name:fallback, score:score, charId:Game.charId, date:Date.now() });
   board.sort(function(a, b){ return b.score - a.score || a.date - b.date; });
   Game.leaderboard = board.slice(0, LEADERBOARD_LIMIT);
   saveLeaderboard();
@@ -1044,26 +1108,41 @@ function drawBackground(th){
   var ph = dayPhase();
   var cycle = ph.cycle, dawn = ph.dawn, dusk = ph.dusk, night = ph.night;
 
-  /* 天空 */
-  var g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  g.addColorStop(0, th.sky0); g.addColorStop(1, th.sky1);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
+  var sceneAssets = TEST_SCENE_ASSETS[th.id];
+  var useSceneBackdrop = USE_TEST_SCENE_ASSETS && sceneAssets && sceneAssets.distant &&
+    sceneAssets.distant.complete && sceneAssets.distant.naturalWidth;
+
+  /* 天空 / 测试远景。远景速度远低于角色，避免产生前景倒退感。 */
+  if(useSceneBackdrop){
+    var backdrop = sceneAssets.distant;
+    var backdropH = GROUND_Y;
+    var backdropW = backdrop.naturalWidth / backdrop.naturalHeight * backdropH;
+    var backdropOff = (Game.scroll * 0.045) % backdropW;
+    ctx.drawImage(backdrop, -backdropOff, 0, backdropW, backdropH);
+    ctx.drawImage(backdrop, backdropW - backdropOff, 0, backdropW, backdropH);
+  }else{
+    var g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    g.addColorStop(0, th.sky0); g.addColorStop(1, th.sky1);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
+  }
 
   /* 太阳 / 月亮 / 云 */
-  var sunX = (W - 130 - (Game.scroll * 0.02) % (W + 300) + W + 300) % (W + 300) - 150;
-  ctx.fillStyle = 'rgba(255,255,255,.85)';
-  drawCloud(sunX, 74, 1);
-  drawCloud((sunX + 380) % (W + 300) - 150, 118, 0.72);
-  if(cycle < 0.55){
-    ctx.fillStyle = 'rgba(255,246,190,.95)';
-    ctx.beginPath(); ctx.arc(W - 120, 78, 34, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,236,150,.35)';
-    ctx.beginPath(); ctx.arc(W - 120, 78, 52, 0, Math.PI * 2); ctx.fill();
-  }else{
-    ctx.fillStyle = 'rgba(235,240,255,.95)';
-    ctx.beginPath(); ctx.arc(W - 120, 78, 28, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(220,228,255,.35)';
-    ctx.beginPath(); ctx.arc(W - 120, 78, 42, 0, Math.PI * 2); ctx.fill();
+  if(!useSceneBackdrop){
+    var sunX = (W - 130 - (Game.scroll * 0.02) % (W + 300) + W + 300) % (W + 300) - 150;
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    drawCloud(sunX, 74, 1);
+    drawCloud((sunX + 380) % (W + 300) - 150, 118, 0.72);
+    if(cycle < 0.55){
+      ctx.fillStyle = 'rgba(255,246,190,.95)';
+      ctx.beginPath(); ctx.arc(W - 120, 78, 34, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,236,150,.35)';
+      ctx.beginPath(); ctx.arc(W - 120, 78, 52, 0, Math.PI * 2); ctx.fill();
+    }else{
+      ctx.fillStyle = 'rgba(235,240,255,.95)';
+      ctx.beginPath(); ctx.arc(W - 120, 78, 28, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(220,228,255,.35)';
+      ctx.beginPath(); ctx.arc(W - 120, 78, 42, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
   /* 黎明 / 黄昏 / 夜晚覆盖 */
@@ -1072,36 +1151,49 @@ function drawBackground(th){
 
   /* 远层 */
   var id = th.id;
-  var farOff = (Game.scroll * 0.12) % 320;
-  ctx.save(); ctx.globalAlpha = 0.55;
-  for(var i = -1; i < 5; i++){
-    var x = i * 320 - farOff;
-    if(id === 'classroom') drawFarBuilding(x, 250, th.far);
-    else drawFarHill(x, 250, th.far);
+  if(!useSceneBackdrop){
+    var farOff = (Game.scroll * 0.12) % 320;
+    ctx.save(); ctx.globalAlpha = 0.55;
+    for(var i = -1; i < 5; i++){
+      var x = i * 320 - farOff;
+      if(id === 'classroom') drawFarBuilding(x, 250, th.far);
+      else drawFarHill(x, 250, th.far);
+    }
+    ctx.restore();
   }
-  ctx.restore();
 
   /* 中层 */
-  var midOff = (Game.scroll * 0.30) % 260;
-  ctx.save(); ctx.globalAlpha = 0.85;
-  for(var j = -1; j < 6; j++){
-    var mx = j * 260 - midOff;
-    if(id === 'forest') drawTree(mx, GROUND_Y, 1.0, th.mid);
-    else if(id === 'classroom') drawShelf(mx, GROUND_Y, th.mid);
-    else drawTrunk(mx, GROUND_Y, th.mid);
+  if(!useSceneBackdrop){
+    var midOff = (Game.scroll * 0.30) % 260;
+    ctx.save(); ctx.globalAlpha = 0.85;
+    for(var j = -1; j < 6; j++){
+      var mx = j * 260 - midOff;
+      if(id === 'forest') drawTree(mx, GROUND_Y, 1.0, th.mid);
+      else if(id === 'classroom') drawShelf(mx, GROUND_Y, th.mid);
+      else drawTrunk(mx, GROUND_Y, th.mid);
+    }
+    ctx.restore();
   }
-  ctx.restore();
 
   /* 近层 */
-  var nearOff = (Game.scroll * 0.62) % 200;
-  ctx.save();
-  for(var k = -1; k < 8; k++){
-    var nx = k * 200 - nearOff;
-    if(id === 'forest') drawBush(nx, GROUND_Y + 4, th.near);
-    else if(id === 'classroom') drawDesk(nx, GROUND_Y + 4, th.near);
-    else drawLeafCluster(nx, GROUND_Y + 2, th.near);
+  if(!useSceneBackdrop){
+    var nearOff = (Game.scroll * 0.62) % 200;
+    ctx.save();
+    for(var k = -1; k < 8; k++){
+      var nx = k * 200 - nearOff;
+      if(id === 'forest') drawBush(nx, GROUND_Y + 4, th.near);
+      else if(id === 'classroom') drawDesk(nx, GROUND_Y + 4, th.near);
+      else drawLeafCluster(nx, GROUND_Y + 2, th.near);
+    }
+    ctx.restore();
   }
-  ctx.restore();
+
+  /* 测试场景分层：画在角色与障碍之前，仅提供景深，不参与碰撞。 */
+  if(useSceneBackdrop){
+    drawForestTestLayer(sceneAssets.middle, GROUND_Y - 260, 260, 0.18);
+    drawForestTestLayer(sceneAssets.foreground, GROUND_Y - 128, 128, 0.50);
+    if(th.id === 'forest') drawForestTestLayer(sceneAssets.canopy, 0, H, 0.08, 0.42);
+  }
 
   /* 地面 */
   ctx.fillStyle = th.ground;
@@ -1202,6 +1294,18 @@ function drawFarBuilding(x, base, color){
     }
   }
 }
+
+function drawForestTestLayer(img, top, height, speed, alpha){
+  if(!img || !img.complete || !img.naturalWidth) return;
+  var width = img.naturalWidth / img.naturalHeight * height;
+  var offset = (Game.scroll * speed) % width;
+  ctx.save();
+  if(alpha !== undefined) ctx.globalAlpha = alpha;
+  for(var x = -offset; x < W; x += width){
+    ctx.drawImage(img, x, top, width, height);
+  }
+  ctx.restore();
+}
 function drawTree(x, base, sc, color){
   ctx.save();
   ctx.fillStyle = '#7a5636';
@@ -1268,6 +1372,14 @@ function drawLeafCluster(x, base, color){
 function drawPlatform(pl){
   var th = currentTheme();
   ctx.save();
+  var key = th.id === 'forest' ? 'forestPlatform' : (th.id === 'classroom' ? 'classroomPlatform' : 'treehousePlatform');
+  var sprite = TEST_OBJECT_ASSETS[key];
+  if(USE_TEST_SCENE_ASSETS && sprite && sprite.complete && sprite.naturalWidth){
+    var artH = pl.w / sprite.naturalWidth * sprite.naturalHeight;
+    ctx.drawImage(sprite, pl.x, pl.y - artH * 0.20, pl.w, artH);
+    ctx.restore();
+    return;
+  }
   /* 支撑 */
   ctx.fillStyle = 'rgba(0,0,0,.10)';
   ctx.fillRect(pl.x + 12, pl.y + pl.h, 8, 14);
@@ -1308,7 +1420,6 @@ function drawObstacle(o){
   ctx.beginPath();
   ctx.ellipse(o.x + o.w / 2, o.y + o.h - 1, o.w / 2 + 5, 7, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.restore();
 
   if(o.dead){
     ctx.globalAlpha = Math.max(0, o.deadT / 30);
@@ -1317,7 +1428,31 @@ function drawObstacle(o){
     ctx.translate(-(o.x + o.w / 2), -(o.y + o.h));
   }
   var id = th.id;
-  if(o.type === 'rock'){
+  if(o.type === 'forestLog' && TEST_SCENE_ASSETS.forest.log && TEST_SCENE_ASSETS.forest.log.complete && TEST_SCENE_ASSETS.forest.log.naturalWidth){
+    ctx.drawImage(TEST_SCENE_ASSETS.forest.log, o.x - 4, o.y - 7, o.w + 8, o.h + 7);
+  }else if(o.type === 'rock' && id === 'forest' && TEST_OBJECT_ASSETS.forestRock && TEST_OBJECT_ASSETS.forestRock.complete && TEST_OBJECT_ASSETS.forestRock.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.forestRock, o.x - 6, o.y - 5, o.w + 12, o.h + 5);
+  }else if(o.type === 'stump' && id === 'forest' && TEST_OBJECT_ASSETS.forestStump && TEST_OBJECT_ASSETS.forestStump.complete && TEST_OBJECT_ASSETS.forestStump.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.forestStump, o.x - 7, o.y - 5, o.w + 14, o.h + 5);
+  }else if(o.type === 'thorn' && id === 'forest' && TEST_OBJECT_ASSETS.forestThorn && TEST_OBJECT_ASSETS.forestThorn.complete && TEST_OBJECT_ASSETS.forestThorn.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.forestThorn, o.x - 10, o.y - 7, o.w + 20, o.h + 7);
+  }else if(o.type === 'branch' && id === 'forest' && TEST_OBJECT_ASSETS.forestBranch && TEST_OBJECT_ASSETS.forestBranch.complete && TEST_OBJECT_ASSETS.forestBranch.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.forestBranch, o.x - 8, o.y - 4, o.w + 16, o.h + 4);
+  }else if(o.type === 'desk' && id === 'classroom' && TEST_OBJECT_ASSETS.classroomDesk && TEST_OBJECT_ASSETS.classroomDesk.complete && TEST_OBJECT_ASSETS.classroomDesk.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.classroomDesk, o.x - 5, o.y - 6, o.w + 10, o.h + 6);
+  }else if(o.type === 'books' && id === 'classroom' && TEST_OBJECT_ASSETS.classroomBooks && TEST_OBJECT_ASSETS.classroomBooks.complete && TEST_OBJECT_ASSETS.classroomBooks.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.classroomBooks, o.x - 4, o.y - 5, o.w + 8, o.h + 5);
+  }else if(o.type === 'crate' && id === 'classroom' && TEST_OBJECT_ASSETS.classroomCrate && TEST_OBJECT_ASSETS.classroomCrate.complete && TEST_OBJECT_ASSETS.classroomCrate.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.classroomCrate, o.x - 4, o.y - 5, o.w + 8, o.h + 5);
+  }else if(o.type === 'crate' && id === 'treehouse' && TEST_OBJECT_ASSETS.treehouseCrate && TEST_OBJECT_ASSETS.treehouseCrate.complete && TEST_OBJECT_ASSETS.treehouseCrate.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.treehouseCrate, o.x - 4, o.y - 6, o.w + 8, o.h + 6);
+  }else if(o.type === 'branch' && id === 'treehouse' && TEST_OBJECT_ASSETS.treehouseBranch && TEST_OBJECT_ASSETS.treehouseBranch.complete && TEST_OBJECT_ASSETS.treehouseBranch.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.treehouseBranch, o.x - 8, o.y - 4, o.w + 16, o.h + 4);
+  }else if(o.type === 'rock' && id === 'treehouse' && TEST_OBJECT_ASSETS.treehouseRock && TEST_OBJECT_ASSETS.treehouseRock.complete && TEST_OBJECT_ASSETS.treehouseRock.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.treehouseRock, o.x - 6, o.y - 5, o.w + 12, o.h + 5);
+  }else if(o.type === 'stump' && id === 'treehouse' && TEST_OBJECT_ASSETS.treehouseStump && TEST_OBJECT_ASSETS.treehouseStump.complete && TEST_OBJECT_ASSETS.treehouseStump.naturalWidth){
+    ctx.drawImage(TEST_OBJECT_ASSETS.treehouseStump, o.x - 7, o.y - 5, o.w + 14, o.h + 5);
+  }else if(o.type === 'rock'){
     ctx.fillStyle = '#8b8f99';
     ctx.beginPath();
     ctx.moveTo(o.x, o.y + o.h);
@@ -1399,7 +1534,11 @@ function drawPickup(p){
   ctx.fillStyle = glow;
   ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
 
-  if(p.kind === 'acorn'){
+  var sprite = p.kind === 'acorn' ? TEST_OBJECT_ASSETS.acorn : TEST_OBJECT_ASSETS.book;
+  if(USE_TEST_SCENE_ASSETS && sprite && sprite.complete && sprite.naturalWidth){
+    if(p.kind === 'book') ctx.rotate(Math.sin(Game.time * 0.06 + p.seed) * 0.14);
+    ctx.drawImage(sprite, -14, -14, 28, 28);
+  }else if(p.kind === 'acorn'){
     /* 橡果 */
     ctx.fillStyle = '#b5793f';
     ctx.beginPath(); ctx.ellipse(0, 4, 11, 13, 0, 0, Math.PI * 2); ctx.fill();
@@ -1642,7 +1781,9 @@ function resetWorld(){
 }
 
 function obstacleTypesFor(themeId){
-  if(themeId === 'forest') return ['rock', 'stump', 'thorn', 'branch'];
+  if(themeId === 'forest'){
+    return USE_TEST_SCENE_ASSETS ? ['forestLog', 'rock', 'stump', 'thorn', 'branch'] : ['rock', 'stump', 'thorn', 'branch'];
+  }
   if(themeId === 'classroom') return ['desk', 'books', 'crate'];
   return ['crate', 'branch', 'stump', 'rock'];
 }
@@ -1653,6 +1794,7 @@ function spawnObstacle(){
   var type = types[Math.floor(Math.random() * types.length)];
   var w, h;
   if(type === 'rock'){ w = 40 + Math.random() * 24; h = 46 + Math.random() * 22; }
+  else if(type === 'forestLog'){ w = 92; h = 52; }
   else if(type === 'stump'){ w = 44; h = 56 + Math.random() * 16; }
   else if(type === 'branch'){ w = 52; h = 60 + Math.random() * 20; }
   else if(type === 'desk'){ w = 62; h = 58; }
@@ -1738,7 +1880,10 @@ function drawPowerup(p){
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  if(p.kind === 'shield'){
+  var sprite = TEST_OBJECT_ASSETS[p.kind];
+  if(USE_TEST_SCENE_ASSETS && sprite && sprite.complete && sprite.naturalWidth){
+    ctx.drawImage(sprite, cx - 17, cy - 17, 34, 34);
+  }else if(p.kind === 'shield'){
     ctx.beginPath();
     ctx.moveTo(cx, cy - 10);
     ctx.lineTo(cx + 8, cy - 6);
@@ -1793,7 +1938,7 @@ function grantPowerup(kind){
 function startGame(){
   Game.state = 'playing';
   Game.paused = false;
-  Game.score = 0; Game.books = 0; Game.acorns = 0; Game.nextHealScore = 100;
+  Game.score = 0; Game.books = 0; Game.acorns = 0; Game.nextHealScore = 1000;
   /* ★ R4-1：起始速度必须按档位取，否则任何档位开局第一帧都会按 5.6 起步
      （简单档表现为"开局突然偏快，一帧后才降回 4.4"）。
      ★ R4-2：结算页「再跑一次」直接走 startGame()，不经过菜单/不会调
@@ -2157,7 +2302,7 @@ function drawBuffChip(x, y, kind, ratio, stacks){
   return x + (r + 3) * 2 + 8;
 }
 
-/* 统一加分入口：双倍分生效；每满 100 分在未满血时回复 1 颗心。 */
+/* 统一加分入口：双倍分生效；每满 1000 分在未满血时回复 1 颗心。 */
 function addScore(n){
   Game.score += (Buff.double > 0) ? n * 2 : n;
   while(Game.score >= Game.nextHealScore){
@@ -2167,7 +2312,7 @@ function addScore(n){
       ring(player.x + player.w / 2, player.y + player.h / 2, '#ff9bac');
       for(var i = 0; i < 10; i++) spark(player.x + player.w / 2, player.y + player.h / 2, '#ff9bac');
     }
-    Game.nextHealScore += 100;
+    Game.nextHealScore += 1000;
   }
 }
 
@@ -2509,7 +2654,7 @@ function drawHUD(){
   ctx.fillText('橡果 ' + Game.acorns + '   ·   书本 ' + Game.books, W / 2, 70);
   ctx.font = '12px system-ui,sans-serif';
   ctx.fillStyle = 'rgba(255,236,192,.92)';
-  ctx.fillText('每 100 分回复 1 心', W / 2, 90);
+  ctx.fillText('每 1000 分回复 1 心', W / 2, 90);
 
   /* 暂停按钮 */
   var pr = pauseBtnRect();
@@ -2602,12 +2747,87 @@ function drawHUD(){
 
 /* ---- 结算页（续） ---- */
 function drawGameOver(){
+  ctx.globalAlpha = 1;
   var th = currentTheme();
   drawBackground(th);
-  ctx.fillStyle = 'rgba(14,30,20,.60)';
-  ctx.fillRect(0, 0, W, H);
+  /* 结算页冻结最后一帧的跑酷场景，保留角色、道具与粒子，不让画面突然空掉。 */
+  platforms.forEach(drawPlatform);
+  obstacles.forEach(drawObstacle);
+  pickups.forEach(drawPickup);
+  powerups.forEach(drawPowerup);
+  drifters.forEach(drawDrifter);
+  if(player){
+    if(Buff.magnet > 0){
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = '#c07de8';
+      ctx.beginPath();
+      ctx.arc(player.x + player.w / 2, player.y + player.h / 2, 161, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    player.trail.forEach(function(t){
+      ctx.save(); ctx.globalAlpha = (t.life / 16) * 0.30;
+      ctx.fillStyle = '#9fd8ff';
+      roundRect(t.x, t.y, player.w, t.h, 14); ctx.fill();
+      ctx.restore();
+    });
+    if(player.dashing){
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      var grd = ctx.createLinearGradient(player.x - 60, 0, player.x + player.w, 0);
+      grd.addColorStop(0, 'rgba(159,216,255,0)');
+      grd.addColorStop(1, 'rgba(159,216,255,.85)');
+      ctx.fillStyle = grd;
+      roundRect(player.x - 60, player.y + 6, player.w + 60, player.h - 12, 16); ctx.fill();
+      ctx.restore();
+    }
+    drawCharacter(CHARACTERS[Game.charId], player, 1);
+    if(Buff.shield > 0){
+      var scx = player.x + player.w / 2, scy = player.y + player.h / 2;
+      ctx.save();
+      ctx.globalAlpha = 0.65;
+      ctx.strokeStyle = '#7fd4ff'; ctx.lineWidth = 3.4;
+      ctx.beginPath();
+      ctx.arc(scx, scy, player.h * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 0.14;
+      ctx.fillStyle = '#7fd4ff';
+      ctx.beginPath();
+      ctx.arc(scx, scy, player.h * 0.72, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    if(Buff.double > 0){
+      ctx.save();
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = '#ffd45e'; ctx.lineWidth = 3;
+      ctx.setLineDash([9, 7]);
+      ctx.beginPath();
+      ctx.arc(player.x + player.w / 2, player.y + player.h / 2, player.h * 0.86, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if(player.gliding){
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 3;
+      for(var i = 0; i < 3; i++){
+        var gy = player.y + player.h * 0.4 + i * 14;
+        ctx.beginPath();
+        ctx.moveTo(player.x - 30 - i * 8, gy);
+        ctx.lineTo(player.x - 4, gy);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+  drawParticles();
 
+  /* 不继承跑酷帧中任何透明度；否则结算卡会随着上一帧错误变淡。 */
   ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(14,30,20,.74)';
+  ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.font = 'bold 46px system-ui,sans-serif';
   ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(0,0,0,.36)';
@@ -2617,7 +2837,7 @@ function drawGameOver(){
 
   /* 本局成绩 */
   var px = 160, py = 140, pw = 290, ph = 250;
-  ctx.fillStyle = 'rgba(255,255,255,.94)';
+  ctx.fillStyle = '#fffdf7';
   roundRect(px, py, pw, ph, 20); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,.14)'; ctx.lineWidth = 3;
   roundRect(px, py, pw, ph, 20); ctx.stroke();
@@ -2644,7 +2864,7 @@ function drawGameOver(){
 
   /* 本机家庭积分榜：保存前 10 名，结算页展示全部记录。 */
   var lx = 480, lw = 320;
-  ctx.fillStyle = 'rgba(255,255,255,.94)';
+  ctx.fillStyle = '#fffdf7';
   roundRect(lx, py, lw, ph, 20); ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,.14)'; ctx.lineWidth = 3;
   roundRect(lx, py, lw, ph, 20); ctx.stroke();
