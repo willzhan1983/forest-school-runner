@@ -93,15 +93,18 @@ const TEST_OBJECT_FILES = {
   treehouseStump:'assets/obstacles/treehouse/v4-test/vine-stump.png'
 };
 
-function loadTestSceneAssets(){
-  if(!USE_TEST_SCENE_ASSETS) return;
-  Object.keys(TEST_SCENE_FILES).forEach(function(themeId){
-    Object.keys(TEST_SCENE_FILES[themeId]).forEach(function(key){
-      var img = new Image();
-      TEST_SCENE_ASSETS[themeId][key] = img;
-      img.src = TEST_SCENE_FILES[themeId][key];
-    });
+function ensureTestSceneAssets(themeId){
+  if(!USE_TEST_SCENE_ASSETS || !TEST_SCENE_FILES[themeId]) return;
+  Object.keys(TEST_SCENE_FILES[themeId]).forEach(function(key){
+    if(TEST_SCENE_ASSETS[themeId][key]) return;
+    var img = new Image();
+    TEST_SCENE_ASSETS[themeId][key] = img;
+    img.src = TEST_SCENE_FILES[themeId][key];
   });
+}
+function loadTestSceneAssets(){
+  /* 首屏只加载森林，避免菜单阶段一次下载全部场景背景。 */
+  ensureTestSceneAssets('forest');
 }
 function loadTestObjectAssets(){
   if(!USE_TEST_SCENE_ASSETS) return;
@@ -141,19 +144,34 @@ function loadTestActionSprites(){
   });
 }
 
+function testActionState(c, p){
+  if(p.preview) return 'idle';
+  if(Game.state === 'gameover') return 'win';
+  if(p.hurtTimer > 0) return 'hurt';
+  if(c.id === 'cat' && p.dashing) return 'dash';
+  if(c.id === 'owl' && p.gliding) return 'glide';
+  if(p.sliding) return 'slide';
+  if(!p.grounded) return p.vy < 0 ? 'jump' : 'fall';
+  if(p.landTimer > 0) return 'land';
+  return 'run';
+}
+
 function testActionSprite(c, p){
   if(!USE_EXTRACTED_TEST_SPRITES || !c.testSprites) return null;
-  var frames;
-  if(p.preview) frames = c.testSprites.idle;
-  else if(p.hurtTimer > 0) frames = c.testSprites.hurt;
-  else if(c.id === 'cat' && p.dashing) frames = c.testSprites.dash;
-  else if(c.id === 'owl' && p.gliding) frames = c.testSprites.glide;
-  else if(p.sliding) frames = c.testSprites.slide;
-  else if(!p.grounded) frames = p.vy < 0 ? c.testSprites.jump : c.testSprites.fall;
-  else if(p.landTimer > 0) frames = c.testSprites.land;
-  else frames = c.testSprites.run;
+  var state = testActionState(c, p);
+  var frames = c.testSprites[state];
   if(!frames || !frames.length) return null;
-  var idx = frames.length > 1 ? Math.floor(Game.time / 7) % frames.length : 0;
+  var idx = 0;
+  if(frames.length > 1){
+    if(state === 'run'){
+      /* 跑步帧跟随脚步相位，速度提高时自然加快，避免用全局时间切帧而打滑。 */
+      idx = Math.floor((p.runPhase || 0) / 4) % frames.length;
+    }else if(state === 'dash'){
+      /* 冲刺从起势帧顺序走到收势帧，不在短动作中循环跳帧。 */
+      idx = Math.min(frames.length - 1,
+        Math.floor((1 - Math.max(0, p.dashTimer || 0) / 34) * frames.length));
+    }
+  }
   return frames[idx] && frames[idx].complete && frames[idx].naturalWidth ? frames[idx] : null;
 }
 
@@ -751,10 +769,13 @@ function drawCharacter(c, p, alpha){
   var squat = actionSprite ? 1 : (p.sliding ? 0.52 : 1);     // 测试动作图自身包含姿势
   var stretch = actionSprite ? 1 : (p.vy < -2 ? 1.12 : (p.vy > 6 ? 0.92 : 1));
   var landSquash = (p.grounded && !p.sliding) ? (p.landSquash || 0) : 0;
+  var gait = (p.grounded && !p.sliding) ? Math.sin(p.runPhase || 0) : 0;
+  var poseLean = actionSprite ? 0 : (p.dashing ? -0.12 : (p.gliding ? -0.045 : 0));
+  var poseWidth = actionSprite ? 1 : (p.dashing ? 1.14 : (p.gliding ? 1.08 : 1));
 
   ctx.translate(cx, p.y + p.h);
-  ctx.rotate(p.rot || 0);
-  ctx.scale((1/stretch) * (1 + landSquash * 0.75), stretch * squat * (1 - landSquash));
+  ctx.rotate((p.rot || 0) + poseLean);
+  ctx.scale((poseWidth/stretch) * (1 + landSquash * 0.75), stretch * squat * (1 - landSquash));
   ctx.translate(0, -p.h);
 
   /* 测试动作帧：单帧未加载时会继续走现有素材/程序绘制回退。 */
@@ -776,6 +797,7 @@ function drawCharacter(c, p, alpha){
   if(c.spriteReady && c.sprite){
     var ar = c.sprite.width / Math.max(1, c.sprite.height);
     var dw2 = p.h * ar;
+    if(p.grounded && !p.sliding) ctx.translate(0, -Math.abs(gait) * 2.4);
     ctx.drawImage(c.sprite, p.w / 2 - dw2 / 2, 0, dw2, p.h);
     ctx.restore();
     return;
@@ -1089,6 +1111,12 @@ function currentTheme(){
     groundTop: lerpColor(a.groundTop, b.groundTop, t),
     line: lerpColor(a.line, b.line, t)
   };
+}
+
+function preloadNextTestSceneAssets(){
+  if(!USE_TEST_SCENE_ASSETS) return;
+  var next = THEMES[(Game.themeIndex + 1) % THEMES.length];
+  ensureTestSceneAssets(next.id);
 }
 
 /* ---- 昼夜相位（50 秒一循环），渲染与音乐共用 ---- */
@@ -1951,6 +1979,8 @@ function startGame(){
   Game.scroll = 0;
   resetWorld();
   player = createPlayer(Game.charId);
+  /* 开始跑后后台准备下一个场景；切换时若尚未完成仍会安全回退到 Canvas 画面。 */
+  preloadNextTestSceneAssets();
   Audio2.start();
   Audio2.startMusic();
 }
@@ -1993,6 +2023,7 @@ function update(dt){
       Game.themeAt += 1800;
       Game.transitioning = false;
       Game.banner = 130;
+      preloadNextTestSceneAssets();
     }
   }
 
@@ -3198,7 +3229,7 @@ requestAnimationFrame(loop);
 /* 调试用接口（控制台输入 __fsr.Game 可看状态） */
 window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARACTERS,
                  Buff:Buff, grantPowerup:grantPowerup, spawnPowerup:spawnPowerup,
-                 Audio2:Audio2, startGame:startGame, gameOver:gameOver,
+                 Audio2:Audio2, startGame:startGame, gameOver:gameOver, addScore:addScore,
                  /* ---- 难度系统（DIFF-002）---- */
                  DIFF:DIFF, DIFF_ORDER:DIFF_ORDER, diffCfg:diffCfg,
                  applyDifficulty:applyDifficulty, setDifficulty:setDifficulty,
@@ -3206,6 +3237,7 @@ window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARA
                  diffBtnRect:diffBtnRect, diffHitRect:diffHitRect,
                  obstacles:null, platforms:null, pickups:null,
                  getDiffId:function(){ return diffId; },
+                 getTestActionState:testActionState,
                  getHover:function(){ return hoverDiff; },
                  getPressed:function(){ return pressedDiff; },
                  Input:Input,
