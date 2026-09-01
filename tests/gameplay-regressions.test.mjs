@@ -57,6 +57,37 @@ test('every 1000 points restores exactly one missing heart and advances the next
   );
 });
 
+test('difficulty levels keep gradually accelerating at 1000 m milestones with safe spacing', async () => {
+  const fsr = await loadGame();
+  const levels = ['easy', 'normal', 'hard', 'nightmare'].map(id => fsr.DIFF[id]);
+
+  for (const level of levels.slice(1)) {
+    assert.equal(fsr.speedForDistance(level, 0), level.speedBase, level.id + ' starts at its base speed');
+    assert.equal(fsr.speedForDistance(level, 9999), level.speedBase, level.id + ' does not accelerate before 1000 m');
+    assert.equal(fsr.speedForDistance(level, 10000), level.speedBase + level.speedStep, level.id + ' steps up at 1000 m');
+    assert.equal(fsr.speedForDistance(level, 20000), level.speedBase + level.speedStep * 2, level.id + ' steps up again at 2000 m');
+    assert.equal(fsr.speedForDistance(level, 50000), level.speedBase + level.speedStep * 5, level.id + ' keeps accelerating after 2000 m');
+    assert.ok(level.gapSpeedFactor >= 100, level.id + ' expands obstacle gaps as speed rises');
+    const longRunSpeed = fsr.speedForDistance(level, 100000);
+    assert.ok(fsr.obstacleGapFor(level, 100000, longRunSpeed) / longRunSpeed >= level.gapSpeedFactor,
+      level.id + ' keeps the same obstacle reaction time during a long run');
+    assert.equal(level.dblProb, 0, level.id + ' has no double obstacles');
+  }
+  assert.equal(fsr.speedForDistance(levels[0], 50000), levels[0].speedBase);
+  assert.deepEqual(levels.map(level => level.maxLives), [5, 4, 3, 2]);
+});
+
+test('high-speed obstacles keep collision detection across a single frame', async () => {
+  const fsr = await loadGame();
+  const player = { x:120, y:390, w:52, h:68 };
+  const obstacle = { x:40, y:390, w:52, h:68 };
+
+  assert.equal(fsr.hitsObstacle(player.x, player.y, player.w, player.h, obstacle, 220), true,
+    'an obstacle crossing the player in one fast frame still hits');
+  assert.equal(fsr.hitsObstacle(player.x, 260, player.w, player.h, obstacle, 220), false,
+    'a jump above a crossing obstacle remains safe');
+});
+
 test('the completion screen selects the Win action while menu preview remains Idle', async () => {
   const fsr = await loadGame();
   const p = { preview:false, hurtTimer:0, dashing:false, gliding:false, sliding:false, grounded:true, landTimer:0, vy:0 };

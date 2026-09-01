@@ -571,11 +571,10 @@ canvas.addEventListener('pointercancel', function(){ Input.pointerDown=false; In
 canvas.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 
 /* ============================================================
- * 4.5 难度配置（DIFF-001 数值表 / DIFF-002 实现）
+ * 4.5 难度配置（高档位按里程逐步提速；障碍间隔随速度保持安全时间）
  * ------------------------------------------------------------
- * 🔵 normal 档所有数值与原硬编码「代数恒等」，非近似：
- *    speedCap - speedBase = 12.0 - 5.6 === 6.4（IEEE754 位级相等，已验证）
- *    故 Game.speed / gap / 双连 / 生成间隔 在 normal 档逐帧不变。
+ * 🔵 普通、困难、噩梦每跑 1000 米小幅提速一次，不设封顶；障碍间距随速度保持反应时间。
+ *    不再生成双障碍，确保一次跳跃只需处理一个障碍。
  * ⚠️ R8：easy 档 dblFrom 用 1e9 而非 Infinity —— Infinity 经 JSON
  *    序列化会变成 null，`distance > null` 恒真会导致双连障碍永远触发。
  * ========================================================== */
@@ -584,46 +583,50 @@ var DIFF = {
     id:'easy', name:'简 单', short:'轻松跑，5 颗心',
     desc:'跑得慢一点、障碍离得远一点，5 颗心陪你慢慢跑。',
     color:'#4caf6d', colorDark:'#2f7a46', glow:'rgba(76,175,109,.45)',
-    speedBase:4.4,  rampDiv:1500, speedCap:8.0,
+    speedBase:4.4,  rampDiv:1500,
+    speedStepMeters:1000, speedStep:0,
     gapBase:620, gapMin:380, gapDiv:24, gapJitter:120,
-    dblFrom:1e9, dblProb:0,
+    dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
     maxLives:5, invulnHit:130, invulnShield:100,
     pwInit:1300, pwBase:1150, pwJitter:1050,
     pkInit:340,  pkBase:380,  pkJitter:380,
     pfInit:620,  pfBase:520,  pfJitter:420
   },
   normal: {
-    id:'normal', name:'普 通', short:'标准速度，3 颗心',
-    desc:'标准节奏，跑得越远越快，3 颗心刚刚好。',
+    id:'normal', name:'普 通', short:'每 1000 米逐步提速，4 颗心',
+    desc:'每跑 1000 米逐步提速，跑得越远越有挑战，4 颗心。',
     color:'#4a90d9', colorDark:'#2b6bb0', glow:'rgba(74,144,217,.45)',
-    speedBase:5.6,  rampDiv:900,  speedCap:12.0,
-    gapBase:430, gapMin:210, gapDiv:26, gapJitter:170,
-    dblFrom:2200, dblProb:0.22,
-    maxLives:3, invulnHit:95, invulnShield:70,
+    speedBase:5.0,  rampDiv:900,
+    speedStepMeters:1000, speedStep:0.2,
+    gapBase:700, gapMin:560, gapDiv:36, gapJitter:140, gapSpeedFactor:110,
+    dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
+    maxLives:4, invulnHit:95, invulnShield:70,
     pwInit:2600, pwBase:2300, pwJitter:2100,
     pkInit:380,  pkBase:420,  pkJitter:420,
     pfInit:760,  pfBase:620,  pfJitter:520
   },
   hard: {
-    id:'hard', name:'困 难', short:'很快，2 颗心',
-    desc:'更快更挤，双连障碍来得早，只有 2 颗心。',
+    id:'hard', name:'困 难', short:'每 1000 米逐步提速，3 颗心',
+    desc:'每跑 1000 米逐步提速，跑得越远越有挑战，3 颗心。',
     color:'#f28c28', colorDark:'#c26a12', glow:'rgba(242,140,40,.45)',
-    speedBase:6.2,  rampDiv:780,  speedCap:13.5,
-    gapBase:400, gapMin:190, gapDiv:27, gapJitter:170,
-    dblFrom:1400, dblProb:0.34,
-    maxLives:2, invulnHit:75, invulnShield:58,
+    speedBase:5.6,  rampDiv:780,
+    speedStepMeters:1000, speedStep:0.2,
+    gapBase:740, gapMin:600, gapDiv:38, gapJitter:150, gapSpeedFactor:110,
+    dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
+    maxLives:3, invulnHit:75, invulnShield:58,
     pwInit:3200, pwBase:2900, pwJitter:2600,
     pkInit:420,  pkBase:480,  pkJitter:460,
     pfInit:900,  pfBase:760,  pfJitter:600
   },
   nightmare: {
-    id:'nightmare', name:'噩 梦', short:'极快，只有 1 颗心',
-    desc:'极限速度，1 颗心，一次失误就得重来。',
+    id:'nightmare', name:'噩 梦', short:'每 1000 米逐步提速，2 颗心',
+    desc:'每跑 1000 米逐步提速，跑得越远越有挑战，2 颗心。',
     color:'#c2185b', colorDark:'#8e0e42', glow:'rgba(194,24,91,.45)',
-    speedBase:7.0,  rampDiv:700,  speedCap:14.5,
-    gapBase:380, gapMin:175, gapDiv:27, gapJitter:150,
-    dblFrom:1200, dblProb:0.42,
-    maxLives:1, invulnHit:65, invulnShield:50,
+    speedBase:6.2,  rampDiv:700,
+    speedStepMeters:1000, speedStep:0.2,
+    gapBase:800, gapMin:660, gapDiv:45, gapJitter:160, gapSpeedFactor:110,
+    dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
+    maxLives:2, invulnHit:65, invulnShield:50,
     pwInit:3600, pwBase:3000, pwJitter:2600,
     pkInit:460,  pkBase:520,  pkJitter:480,
     pfInit:1000, pfBase:860,  pfJitter:680
@@ -635,6 +638,24 @@ var DIFF_ORDER = ['easy','normal','hard','nightmare'];
 var diffId = 'easy';
 
 function diffCfg(){ return DIFF[diffId] || DIFF.normal; }
+
+function speedForDistance(D, distance){
+  var meters = distance / 10;
+  var steps = Math.floor(meters / (D.speedStepMeters || 1000));
+  return D.speedBase + steps * (D.speedStep || 0);
+}
+
+function obstacleGapFor(D, distance, speed){
+  return Math.max(D.gapMin, D.gapBase - distance / D.gapDiv,
+                  speed * (D.gapSpeedFactor || 0));
+}
+
+function hitsObstacle(px, py, pw, ph, ob, previousX){
+  var overlapsNow = px < ob.x + ob.w - 4 && px + pw > ob.x + 4;
+  var crossedThisFrame = previousX !== undefined &&
+    px < previousX + ob.w - 4 && px + pw > ob.x + 4;
+  return (overlapsNow || crossedThisFrame) && py < ob.y + ob.h && py + ph > ob.y + 4;
+}
 
 /* ★ 守卫 B（R1/R2 双保险之一）：只有主菜单允许改难度。
      playing / paused 态下难度键与点击全部屏蔽 —— 否则 maxLives 变化会让
@@ -2005,12 +2026,9 @@ function update(dt){
   var c = CHARACTERS[Game.charId];
 
   /* --- 速度与距离 ---
-     ★ A1 等价性：normal 档 = 5.6 + Math.min(distance/900, 6.4)，
-       因为 speedCap - speedBase = 12.0 - 5.6 === 6.4（IEEE754 位级相等）。
-       必须保持 `base + Math.min(x, cap-base)` 这个形式（而非
-       Math.min(base+x, cap)）才能与原式逐帧位级一致。 */
+     每 1000 米才进入下一档速度，避免短时间内连续加速。 */
   var D = diffCfg();
-  Game.speed = D.speedBase + Math.min(Game.distance / D.rampDiv, D.speedCap - D.speedBase);
+  Game.speed = speedForDistance(D, Game.distance);
   var move = Game.speed * dt;
   Game.distance += move;
   Game.scroll += move;
@@ -2125,6 +2143,7 @@ function update(dt){
   var k;
   for(k = obstacles.length - 1; k >= 0; k--){
     var o = obstacles[k];
+    o.previousX = o.x;
     o.x -= move;
     if(o.dead){
       o.deadT -= dt; o.deadRot += 0.14 * dt; o.y -= 1.2 * dt;
@@ -2179,14 +2198,13 @@ function update(dt){
 
   if(Game.nextObstacleAt <= 0){
     spawnObstacle();
-    /* ★ R8/短路顺序：dblProb > 0 放在最前，easy 档（dblProb=0, dblFrom=1e9）
-       永不进入分支，且不消耗随机数 —— normal 档的 RNG 调用序列与原版完全一致。 */
+    /* 当前四档均不生成双障碍，避免跳过一个后立刻撞上下一个。 */
     if(D.dblProb > 0 && Game.distance > D.dblFrom && Math.random() < D.dblProb){
       var last = obstacles[obstacles.length - 1];
-      if(last) last.x += 74 + Math.random() * 40;
+      if(last) last.x += D.doubleGap + Math.random() * D.doubleGapJitter;
       spawnObstacle();
     }
-    var gap = Math.max(D.gapMin, D.gapBase - Game.distance / D.gapDiv);
+    var gap = obstacleGapFor(D, Game.distance, Game.speed);
     Game.nextObstacleAt = gap + Math.random() * D.gapJitter;
   }
   if(Game.nextPlatformAt <= 0){
@@ -2223,7 +2241,7 @@ function update(dt){
   for(k = 0; k < obstacles.length; k++){
     var ob = obstacles[k];
     if(ob.dead) continue;
-    if(px < ob.x + ob.w - 4 && px + pw > ob.x + 4 && py < ob.y + ob.h && py + ph > ob.y + 4){
+    if(hitsObstacle(px, py, pw, ph, ob, ob.previousX)){
       if(p.dashing || p.dashImpactTimer > 0){
         ob.dead = true; ob.deadT = 26; ob.deadRot = 0;
         addScore(25);
@@ -3254,7 +3272,7 @@ window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARA
                  diffBtnRect:diffBtnRect, diffHitRect:diffHitRect,
                  linkRect:linkRect,
                  obstacles:null, platforms:null, pickups:null,
-                 getDiffId:function(){ return diffId; },
+                 getDiffId:function(){ return diffId; }, speedForDistance:speedForDistance, obstacleGapFor:obstacleGapFor, hitsObstacle:hitsObstacle,
                  getTestActionState:testActionState,
                  getHover:function(){ return hoverDiff; },
                  getPressed:function(){ return pressedDiff; },
