@@ -1,5 +1,6 @@
 import { Runner, LEVELS, MAPS, LANE_WIDTH, DASH_DURATION, DASH_COOLDOWN, seededRandom, collectibleFor } from './engine.js';
 import { createWorld } from './world.js';
+import { createMapMusic } from './music.js';
 const $ = s => document.querySelector(s);
 const testMode = new URLSearchParams(location.search).has('test');
 const testFuzzyModel = new URLSearchParams(location.search).has('testFuzzyModel');
@@ -32,7 +33,8 @@ if (testFuzzyV5) {
   $('.prototype-label').textContent = 'FOREST SCHOOL LAB · 3D 线上试玩版';
 }
 let selectedLevel = 'easy', selectedMap = 0, unlockedMap = 0, modeShown = '', lastTime = 0, clock = 0, toastTime = 0;
-let best = 0, soundOn = false, audio = null;
+let best = 0, soundOn = true, audio = null;
+const music = createMapMusic();
 const boostKeys = new Set();
 function clearBoost() { boostKeys.clear(); game.setBoost(false); }
 try { best = Number(localStorage.getItem('forest-runner-3d-best-v1')) || 0; } catch { /* Private browsing: still playable. */ }
@@ -73,6 +75,13 @@ function beep(freq, duration = 0.1) {
     gain.gain.setValueAtTime(0.07, audio.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + duration);
     osc.connect(gain); gain.connect(audio.destination); osc.start(); osc.stop(audio.currentTime + duration);
   } catch { /* Sound is optional. */ }
+}
+function syncMusic() {
+  if (!soundOn || game.mode !== 'running') { music.stop(); return; }
+  try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    music.play(game.mapId, audio);
+  } catch { music.stop(); /* Audio is optional. */ }
 }
 function toast(text, duration = 1.7) { $('#toast').textContent = text; toastTime = duration; $('#toast').classList.add('visible'); }
 function events() {
@@ -135,6 +144,7 @@ function syncUI() {
   $('#toast').classList.toggle('visible', toastTime > 0);
   if (modeShown === game.mode) return;
   modeShown = game.mode;
+  syncMusic();
   $('#app').dataset.mode = game.mode;
   $('#menu').hidden = game.mode !== 'menu';
   $('#hud').hidden = !['running', 'paused'].includes(game.mode);
@@ -196,7 +206,7 @@ document.querySelectorAll('[data-action]').forEach(button => {
 $('#pause').addEventListener('click', () => { clearBoost(); game.pause(); syncUI(); });
 $('#resume').addEventListener('click', () => { game.resume(); syncUI(); $('#scene').focus({ preventScroll: true }); });
 $('#home').addEventListener('click', () => { clearBoost(); game.mode = 'menu'; toastTime = 0; syncUI(); $('#start-btn').focus({ preventScroll: true }); });
-$('#sound').addEventListener('click', () => { soundOn = !soundOn; $('#sound').textContent = soundOn ? '♪' : '♫'; $('#sound').setAttribute('aria-label', soundOn ? '关闭音效' : '开启音效'); $('#sound').style.opacity = soundOn ? '1' : '.65'; beep(600); });
+$('#sound').addEventListener('click', () => { soundOn = !soundOn; $('#sound').textContent = soundOn ? '♪' : '♫'; $('#sound').setAttribute('aria-label', soundOn ? '关闭音乐和音效' : '开启音乐和音效'); $('#sound').style.opacity = soundOn ? '1' : '.65'; syncMusic(); beep(600); });
 async function fullscreen() {
   try { if (document.fullscreenElement) await document.exitFullscreen(); else if ($('#app').requestFullscreen) await $('#app').requestFullscreen(); }
   catch { toast('这个浏览器暂不支持全屏'); }
@@ -251,5 +261,5 @@ window.advanceTime = ms => {
   while (left > 0.000001) { const dt = Math.min(left, 1 / 60); tick(dt); left -= dt; }
 };
 // Deterministic browser QA only. Normal play exposes no state mutation hook.
-if (testMode) window.__runnerTest = { game, action, start, world, syncUI, selectCharacter, setLevel: level => { selectedLevel = level; } };
+if (testMode) window.__runnerTest = { game, action, start, world, music, syncUI, selectCharacter, setLevel: level => { selectedLevel = level; } };
 syncUI(); world.draw(game, 0, 0); requestAnimationFrame(loop);
