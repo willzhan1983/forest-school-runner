@@ -6,6 +6,8 @@
 
 👉 **https://willzhan1983.github.io/forest-school-runner/**
 
+独立的 [3D 跑酷试玩版](https://willzhan1983.github.io/forest-school-runner/3d/) 已开放；原 2D 游戏仍是本页默认入口。
+
 ## 角色
 
 | 角色 | 中文名 | 英文名 | 专属技能 |
