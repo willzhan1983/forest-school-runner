@@ -49,10 +49,8 @@ const CHARACTERS = {
 /* 测试素材只在 URL 带 ?testSprites=1 时加载；默认继续使用现有角色与回退逻辑。 */
 const USE_EXTRACTED_TEST_SPRITES = typeof URLSearchParams !== 'undefined' &&
   !!(window.location && new URLSearchParams(window.location.search || '').has('testSprites'));
-/* 场景美术测试兼容旧 ?testForestAssets=1 链接；加载失败时仍使用原 Canvas 画面。 */
-const USE_TEST_SCENE_ASSETS = typeof URLSearchParams !== 'undefined' &&
-  !!(window.location && (new URLSearchParams(window.location.search || '').has('testForestAssets') ||
-    new URLSearchParams(window.location.search || '').has('testSceneAssets')));
+/* 已确认的场景与道具默认启用；图片加载失败时仍使用原 Canvas 画面。 */
+const USE_TEST_SCENE_ASSETS = true;
 const TEST_SCENE_ASSETS = {
   forest:{ distant:null, middle:null, foreground:null, canopy:null, log:null },
   classroom:{ distant:null, middle:null, foreground:null },
