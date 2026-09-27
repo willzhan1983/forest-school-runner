@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 
@@ -7,6 +7,7 @@ const root = new URL('..', import.meta.url);
 
 async function loadGame() {
   const source = await readFile(new URL('js/game.js', root), 'utf8');
+  const loadedImages = [];
   const canvas = {
     style: {},
     getContext() { return new Proxy({}, { get: () => () => {} }); },
@@ -29,13 +30,22 @@ async function loadGame() {
   };
   const context = {
     window, document, localStorage:window.localStorage,
-    Image:class { set src(_value) {} }, requestAnimationFrame() {},
+    Image:class { set src(value) { loadedImages.push(value); } }, requestAnimationFrame() {},
     setTimeout() { return 1; }, clearTimeout() {}, Math, Date,
   };
   window.document = document;
   vm.runInNewContext(source, context);
-  return window.__fsr;
+  return { ...window.__fsr, loadedImages };
 }
+
+test('2D scene and item art load on the normal homepage without test parameters', async () => {
+  const fsr = await loadGame();
+  assert.ok(fsr.loadedImages.includes('assets/backgrounds/forest/v1-test/distant-lake.png'));
+  assert.ok(fsr.loadedImages.includes('assets/items/v2-test/shield.png'));
+  assert.ok(fsr.loadedImages.includes('assets/obstacles/classroom/v4-test/supply-crate.png'));
+  await Promise.all(fsr.loadedImages.filter(path => path.startsWith('assets/'))
+    .map(path => access(new URL(path, root))));
+});
 
 test('every 1000 points restores exactly one missing heart and advances the next threshold', async () => {
   const fsr = await loadGame();
