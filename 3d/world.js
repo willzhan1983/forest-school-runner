@@ -1,4 +1,6 @@
 import * as THREE from './vendor/three.module.js';
+import { addFuzzyShortFur } from './fuzzy-fur.js?v=standing-fur-20261002';
+import { addFuzzyPlushFur } from './fuzzy-plush-fur.js?v=plush-20261004';
 import { LANE_WIDTH, MAPS } from './engine.js';
 
 const MAP_LOOKS = {
@@ -19,11 +21,11 @@ const SCENE_OBSTACLES = {
   europe: { crate: 'europe-stumps', log: 'europe-fallen-fir', branch: 'europe-spruce-arch' },
   amazon: { crate: 'amazon-roots', log: 'amazon-fallen-log', branch: 'amazon-vine-arch' }
 };
+const WILDLIFE = { china: 'china-squirrel', japan: 'japan-white-eye', europe: 'europe-hare', amazon: 'amazon-toucanet' };
 const sceneVersion = mapId => mapId === 'europe' || mapId === 'amazon' ? 'v3' : 'v2';
 
 export function createWorld(canvas, { sceneV2 = false } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
   renderer.setClearColor(0xc4dfcf);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -128,39 +130,82 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   const v5Preview = params.has('testFuzzyV5');
   const rigPreview = params.has('testFuzzyRig') || v5Preview;
   let modelRequest = 0, loadedModel = null;
+  let footSamples = [];
+  const footPoint = new THREE.Vector3();
+  function disposeModel(model) {
+    model.userData.disposeShortFur?.();
+    model.traverse(child => {
+      child.geometry?.dispose();
+      child.skeleton?.dispose();
+      for (const material of child.material ? Array.isArray(child.material) ? child.material : [child.material] : []) {
+        for (const value of Object.values(material)) if (value?.isTexture) value.dispose();
+        material.dispose();
+      }
+    });
+  }
   function setCharacter(character) {
     const request = ++modelRequest;
-    if (loadedModel) { pose.remove(loadedModel); loadedModel = null; }
-    modelState.mixer = null; modelState.actions = null; modelState.active = null;
+    if (loadedModel) { modelState.mixer?.stopAllAction(); modelState.mixer?.uncacheRoot(loadedModel); pose.remove(loadedModel); disposeModel(loadedModel); loadedModel = null; }
+    modelState.mixer = null; modelState.actions = null; modelState.active = null; modelState.clips = []; footSamples = [];
     procedural.visible = true;
     if (character !== 'doodle' && !rigPreview && !params.has('testFuzzyModel')) {
       modelState.status = 'off'; return;
     }
     modelState.status = 'loading';
-    import('./vendor/addons/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
-      const path = character === 'doodle' ? './assets/chars/doodle/v3-test/doodle-rig-test.glb'
-        : v5Preview ? './assets/chars/fuzzy/v5-test/fuzzy-v5-rig-test.glb' : rigPreview ? './assets/chars/fuzzy/fuzzy-rig-v1.glb' : './assets/chars/fuzzy/fuzzy-test.glb';
-      new GLTFLoader().load(path, gltf => {
-        if (request !== modelRequest) return;
-        const model = gltf.scene;
-        const bounds = new THREE.Box3().setFromObject(model);
-        const size = bounds.getSize(new THREE.Vector3());
-        if (!size.y) throw new Error('Character model has no height');
-        const scale = 2.3 / size.y;
-        model.scale.setScalar(scale);
-        // Meshy's front faces +Z; this runner's character faces -Z.
-        model.rotation.y = Math.PI;
-        model.position.set(-(bounds.min.x + size.x / 2) * scale, -bounds.min.y * scale, -(bounds.min.z + size.z / 2) * scale);
-        pose.add(model);
-        loadedModel = model;
-        procedural.visible = false;
-        if ((rigPreview || character === 'doodle') && gltf.animations.length) {
-          modelState.mixer = new THREE.AnimationMixer(model);
-          modelState.actions = Object.fromEntries(gltf.animations.map(clip => [clip.name, modelState.mixer.clipAction(clip)]));
-          modelState.clips = gltf.animations.map(clip => clip.name);
+    import('./vendor/addons/loaders/GLTFLoader.js').then(async ({ GLTFLoader }) => {
+      const path = character === 'doodle' ? './assets/chars/doodle/v4-test/doodle-green-tail-test.glb'
+        : v5Preview ? './assets/chars/fuzzy/v5-test/fuzzy-v5-plush-run-test.glb' : rigPreview ? './assets/chars/fuzzy/fuzzy-rig-v1.glb' : './assets/chars/fuzzy/fuzzy-test.glb';
+      const loader = new GLTFLoader();
+      let gltf;
+      if (character !== 'doodle' && v5Preview && typeof DecompressionStream !== 'undefined') {
+        try {
+          const response = await fetch(`${path}.gz`);
+          if (!response.ok) throw new Error(`Character download failed: ${response.status}`);
+          const blob = await response.blob();
+          // Servers may already decode Content-Encoding: gzip before fetch returns.
+          const buffer = await blob.slice(0, 4).text() === 'glTF' ? await blob.arrayBuffer()
+            : await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+          gltf = await loader.parseAsync(buffer, new URL('.', new URL(path, location.href)).href);
+        } catch { gltf = await loader.loadAsync(path); }
+      } else gltf = await loader.loadAsync(path);
+      if (request !== modelRequest) { disposeModel(gltf.scene); return; }
+      const model = gltf.scene;
+      const bounds = new THREE.Box3().setFromObject(model);
+      const size = bounds.getSize(new THREE.Vector3());
+      if (!size.y) { disposeModel(model); throw new Error('Character model has no height'); }
+      const scale = 2.3 / size.y;
+      model.scale.setScalar(scale);
+      // Meshy's front faces +Z; this runner's character faces -Z.
+      model.rotation.y = Math.PI;
+      model.position.set(-(bounds.min.x + size.x / 2) * scale, -bounds.min.y * scale, -(bounds.min.z + size.z / 2) * scale);
+      pose.add(model);
+      loadedModel = model;
+      procedural.visible = false;
+      if ((rigPreview || character === 'doodle') && gltf.animations.length) {
+        modelState.mixer = new THREE.AnimationMixer(model);
+        modelState.actions = Object.fromEntries(gltf.animations.map(clip => [clip.name, modelState.mixer.clipAction(clip)]));
+        modelState.clips = gltf.animations.map(clip => clip.name);
+      }
+      if (character === 'fuzzy' && v5Preview) model.traverse(child => {
+        if (!child.isSkinnedMesh) return;
+        const positions = child.geometry.attributes.position;
+        child.geometry.computeBoundingBox();
+        const bounds = child.geometry.boundingBox, size = bounds.getSize(new THREE.Vector3());
+        const cells = new Map();
+        // Spread support samples across the paws; never scan the full plush mesh per frame.
+        for (let index = 0; index < positions.count; index++) {
+          const y = positions.getY(index);
+          if (y > bounds.min.y + size.y * 0.2) continue;
+          const x = Math.min(15, Math.floor((positions.getX(index) - bounds.min.x) / size.x * 16));
+          const z = Math.min(15, Math.floor((positions.getZ(index) - bounds.min.z) / size.z * 16));
+          const cell = x * 16 + z, previous = cells.get(cell);
+          if (previous === undefined || y < positions.getY(previous)) cells.set(cell, index);
         }
-        modelState.status = 'ready';
-      }, undefined, error => { if (request === modelRequest) { console.warn('Character model unavailable; using fallback', error); modelState.status = 'fallback'; } });
+        footSamples.push({ mesh: child, indices: [...cells.values()] });
+      });
+      if (character === 'fuzzy' && v5Preview && !params.has('flatFur')) model.userData.disposeShortFur = params.has('shortFur')
+        ? addFuzzyShortFur(model, { standing: true, length: 0.018 }) : addFuzzyPlushFur(model);
+      modelState.status = 'ready';
     }).catch(error => { if (request === modelRequest) { console.warn('Character loader unavailable; using fallback', error); modelState.status = 'fallback'; } });
   }
   if (rigPreview || params.has('testFuzzyModel')) setCharacter('fuzzy');
@@ -179,6 +224,10 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     bead.scale.setScalar(0.12); player.add(bead); return bead;
   });
   const obstacleViews = new Map(), pickupViews = new Map();
+  const warningMarkers = [-1, 0, 1].map(lane => {
+    const marker = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.9, 24), new THREE.MeshBasicMaterial({ color: 0xff7e27, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false }));
+    marker.rotation.x = -Math.PI / 2; marker.position.set(lane * LANE_WIDTH, 0.09, -9); marker.visible = false; scene.add(marker); return marker;
+  });
   const obstacleReady = {};
   const obstacleMaterials = sceneV2 ? Object.fromEntries(Object.entries(SCENE_OBSTACLES).flatMap(([mapId, types]) => Object.values(types).map(name => [name, new THREE.SpriteMaterial({
     map: new THREE.TextureLoader().load(`./assets/obstacles/${sceneVersion(mapId)}/${name}.png`, texture => { texture.colorSpace = THREE.SRGBColorSpace; obstacleReady[name] = true; }, undefined, () => { obstacleReady[name] = false; }),
@@ -186,6 +235,16 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   })]))) : {};
   function makeObstacle(ob, mapId) {
     const group = new THREE.Group(); scene.add(group);
+    if (ob.type === 'animal') {
+      const fallback = new THREE.Group(); group.add(fallback);
+      ball(0x77513c, 0, 0.56, 0, 0.66, 0.52, 0.43, fallback);
+      ball(0x77513c, 0, 1.12, 0.05, 0.38, 0.36, 0.34, fallback);
+      for (const x of [-0.24, 0.24]) mesh(coneGeo, 0x654335, x, 1.46, 0.05, 0.2, 0.42, 0.18, fallback);
+      const icon = sceneV2 && wildlifeMaterials[mapId] ? new THREE.Sprite(wildlifeMaterials[mapId]) : null;
+      if (icon) { icon.scale.set(2, 2, 1); icon.position.y = 1; group.add(icon); }
+      group.userData = { theme: mapId, visualKind: WILDLIFE[mapId], icon, fallbackParts: [fallback], wildlifeMap: mapId };
+      return group;
+    }
     if (sceneV2 && SCENE_PLANTS[mapId]) {
       group.userData.theme = mapId;
       if (mapId === 'china' && ob.type === 'crate') {
@@ -255,13 +314,18 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   }
   const acornGeo = new THREE.SphereGeometry(0.19, 7, 5);
   const itemLoader = new THREE.TextureLoader();
+  const wildlifeReady = {};
+  const wildlifeMaterials = sceneV2 ? Object.fromEntries(Object.entries(WILDLIFE).map(([mapId, name]) => [mapId, new THREE.SpriteMaterial({
+    map: itemLoader.load(`./assets/wildlife/v1-test/${name}.png`, texture => { texture.colorSpace = THREE.SRGBColorSpace; wildlifeReady[mapId] = true; }, undefined, () => { wildlifeReady[mapId] = false; }),
+    transparent: true, alphaTest: 0.08, depthWrite: false, toneMapped: false
+  })])) : {};
   const itemReady = { shield: false, magnet: false };
   const itemMaterials = Object.fromEntries(['shield', 'magnet'].map(kind => [kind, new THREE.SpriteMaterial({
     map: itemLoader.load(`./assets/items/${kind}.png`, () => { itemReady[kind] = true; }), transparent: true, depthWrite: false, toneMapped: false
   })]));
   const sceneItemReady = {};
-  const sceneItemMaterials = sceneV2 ? Object.fromEntries(['acorn', 'bamboo-shoot', 'cherry-blossom', 'pine-cone', 'cacao-pod', 'shield', 'magnet', 'double', 'dash-refill'].map(kind => [kind, new THREE.SpriteMaterial({
-    map: itemLoader.load(`./assets/items/${kind === 'pine-cone' || kind === 'cacao-pod' ? 'v3' : 'v2'}/${kind}.png`, () => { sceneItemReady[kind] = true; }, undefined, () => { sceneItemReady[kind] = false; }), transparent: true, depthWrite: false, toneMapped: false
+  const sceneItemMaterials = sceneV2 ? Object.fromEntries(['acorn', 'bamboo-shoot', 'cherry-blossom', 'pine-cone', 'cacao-pod', 'shield', 'magnet', 'double', 'dash-refill', 'heal-berry', 'golden-seed', 'poison-mushroom', 'sticky-web'].map(kind => [kind, new THREE.SpriteMaterial({
+    map: itemLoader.load(`./assets/items/${['heal-berry', 'golden-seed', 'poison-mushroom', 'sticky-web'].includes(kind) ? 'v4-test' : kind === 'pine-cone' || kind === 'cacao-pod' ? 'v3' : 'v2'}/${kind}.png`, () => { sceneItemReady[kind] = true; }, undefined, () => { sceneItemReady[kind] = false; }), transparent: true, depthWrite: false, toneMapped: false
   })])) : {};
   function addAcorn(parent) {
     mesh(acornGeo, 0xd69235, 0, 0, 0, 1, 1.2, 1, parent);
@@ -271,7 +335,9 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   function makePickup(kind, mapId) {
     const g = new THREE.Group(); scene.add(g);
     if (sceneV2 && SCENE_PLANTS[mapId] && sceneItemMaterials[kind || 'acorn']) {
-      const fallback = new THREE.Group(); g.add(fallback); addAcorn(fallback);
+      const fallback = new THREE.Group(); g.add(fallback);
+      if (kind === 'poison-mushroom' || kind === 'sticky-web') ball(kind === 'poison-mushroom' ? 0x8c58bc : 0x665caa, 0, 0, 0, 0.35, 0.35, 0.35, fallback);
+      else addAcorn(fallback);
       const legacy = itemMaterials[kind] ? new THREE.Sprite(itemMaterials[kind]) : null;
       if (legacy) { legacy.scale.set(1.55, 1.55, 1); g.add(legacy); }
       const icon = new THREE.Sprite(sceneItemMaterials[kind || 'acorn']); icon.scale.set(1.55, 1.55, 1); g.add(icon);
@@ -284,7 +350,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     return g;
   }
   const particles = [];
-  const particleMaterials = Object.fromEntries(Object.entries({ gold: 0xffdf89, 'bamboo-shoot': 0xb4db69, 'cherry-blossom': 0xf5a9ca, 'pine-cone': 0xeec279, 'cacao-pod': 0xffbd68, shield: 0x68e6fb, magnet: 0xffba6a, double: 0x528fee, 'dash-refill': 0x36e2c4 }).map(([key, color]) => [key, new THREE.MeshBasicMaterial({ color })]));
+  const particleMaterials = Object.fromEntries(Object.entries({ gold: 0xffdf89, 'bamboo-shoot': 0xb4db69, 'cherry-blossom': 0xf5a9ca, 'pine-cone': 0xeec279, 'cacao-pod': 0xffbd68, shield: 0x68e6fb, magnet: 0xffba6a, double: 0x528fee, 'dash-refill': 0x36e2c4, 'heal-berry': 0xff6d81, 'golden-seed': 0xffd254, 'poison-mushroom': 0xa675ce, 'sticky-web': 0x8a87b9 }).map(([key, color]) => [key, new THREE.MeshBasicMaterial({ color })]));
   for (let i = 0; i < 28; i++) { const p = new THREE.Mesh(ballGeo, particleMaterials.gold); p.visible = false; scene.add(p); particles.push({ mesh: p, age: 0, vx: 0, vy: 0, vz: 0 }); }
   function burst(x, z, count = 10, color = 'gold', y = 0.8) {
     particles.filter(p => p.age <= 0).slice(0, count).forEach((p, i) => {
@@ -361,7 +427,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   const cameraTarget = new THREE.Vector3(), lookTarget = new THREE.Vector3();
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    portrait = h > w; renderer.setSize(w, h, false); camera.aspect = w / h;
+    portrait = h > w; renderer.setPixelRatio(Math.min(devicePixelRatio, portrait ? 1.2 : 1.6)); renderer.setSize(w, h, false); camera.aspect = w / h;
     if (activeMapId) applyBackground(activeMapId);
     camera.fov = portrait ? 62 : 52; camera.updateProjectionMatrix(); cameraReady = false;
   }
@@ -443,6 +509,15 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
       }
       if (modelState.actions.run) modelState.actions.run.timeScale = Math.min(2.4, 1.55 + Math.max(0, game.speed - 18) * 0.045);
       modelState.mixer.update(dt);
+      if (footSamples.length && (menu || game.y === 0 && game.vy <= 0)) {
+        player.updateMatrixWorld(true);
+        let sole = Infinity;
+        for (const { mesh, indices } of footSamples) {
+          mesh.skeleton.update();
+          for (const index of indices) sole = Math.min(sole, mesh.getVertexPosition(index, footPoint).applyMatrix4(mesh.matrixWorld).y);
+        }
+        pose.position.y = (0.07 - sole) / player.scale.y;
+      }
     }
     tail.rotation.y = Math.sin(clock * 5) * 0.35; flap.rotation.x = -0.4 + Math.sin(clock * 12) * 0.15;
     head.rotation.z = menu ? Math.sin(clock) * 0.04 : 0;
@@ -455,11 +530,16 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     shadow.position.x = player.position.x; shadow.position.z = player.position.z;
     shadow.scale.setScalar(menu ? 1.4 : 1 - Math.min(game.y, 2) * 0.18); shadow.material.opacity = 0.22 - Math.min(game.y, 2) * 0.055;
     cleanViews(obstacleViews, game.obstacles); cleanViews(pickupViews, game.pickups);
+    warningMarkers.forEach((marker, index) => {
+      marker.visible = running && game.obstacles.some(ob => ob.type === 'animal' && ob.warned && !ob.passed && !ob.broken && ob.lane === index - 1 && ob.distance > game.distance - 1.7);
+      marker.material.opacity = 0.65 + Math.sin(clock * 12) * 0.25;
+      marker.scale.setScalar(1 + Math.sin(clock * 12) * 0.1);
+    });
     for (const ob of game.obstacles) {
       if (!obstacleViews.has(ob.id)) obstacleViews.set(ob.id, makeObstacle(ob, mapId));
-      const object = obstacleViews.get(ob.id); object.position.set(ob.lane * LANE_WIDTH, 0, -(ob.distance - game.distance)); object.visible = !ob.broken && !menu;
+      const object = obstacleViews.get(ob.id); object.position.set(ob.lane * LANE_WIDTH, ob.type === 'animal' ? Math.sin(clock * (ob.rushing ? 16 : 4) + ob.id) * 0.045 : 0, -(ob.distance - game.distance)); object.visible = !ob.broken && !menu;
       if (object.userData.icon) {
-        const ready = !!obstacleReady[object.userData.visualKind];
+        const ready = object.userData.wildlifeMap ? !!wildlifeReady[object.userData.wildlifeMap] : !!obstacleReady[object.userData.visualKind];
         object.userData.icon.visible = ready;
         object.userData.fallbackParts.forEach(part => { part.visible = !ready; });
       }
@@ -488,6 +568,9 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     obstacleFallbacks: [...obstacleViews.values()].filter(view => view.userData.icon && !view.userData.icon.visible).length,
     pickupVisuals: [...new Set([...pickupViews.values()].map(view => view.userData.visualKind).filter(Boolean))].sort(),
     pickupFallbacks: [...pickupViews.values()].filter(view => view.userData.fallback?.visible).length,
+    wildlifeReady: !!wildlifeReady[activeMapId],
+    warningLanes: warningMarkers.map((marker, index) => marker.visible ? index - 1 : null).filter(lane => lane !== null),
+    pixelRatio: renderer.getPixelRatio(),
     particlesActive: particles.filter(particle => particle.age > 0).length,
     drawCalls: renderer.info.render.calls, textures: renderer.info.memory.textures });
   return { draw, resize, burst, resetEffects, resetViews, setMap, setCharacter, renderer, modelState, getSceneV2State };

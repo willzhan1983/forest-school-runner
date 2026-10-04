@@ -1,6 +1,7 @@
-import { Runner, LEVELS, MAPS, LANE_WIDTH, DASH_DURATION, DASH_COOLDOWN, seededRandom, collectibleFor } from './engine.js';
-import { createWorld } from './world.js';
+import { Runner, LEVELS, MAPS, LANE_WIDTH, DASH_DURATION, DASH_COOLDOWN, seededRandom, collectibleFor } from './engine.js?v=speed-1235-20261004';
+import { createWorld } from './world.js?v=fuzzy-plush-game-20261004';
 import { createMapMusic } from './music.js';
+import { reduceGesture } from './gestures.js';
 const $ = s => document.querySelector(s);
 const testMode = new URLSearchParams(location.search).has('test');
 const testFuzzyModel = new URLSearchParams(location.search).has('testFuzzyModel');
@@ -10,6 +11,8 @@ const testDoodle = new URLSearchParams(location.search).has('testDoodle');
 const testSceneV2 = new URLSearchParams(location.search).has('testSceneV2');
 const game = new Runner(testMode ? seededRandom(73) : Math.random, { sceneV2: testSceneV2 });
 const world = createWorld($('#scene'), { sceneV2: testSceneV2 });
+const sceneLead = '躲开冲来的小动物，收集红莓和金种子。<br>紫蘑菇、蛛网要避开！';
+if (testSceneV2) $('#menu-lead').innerHTML = sceneLead;
 if (testSceneV2) for (const kind of ['shield', 'magnet']) {
   const icon = $(`#${kind}-status img`);
   icon.src = `./assets/items/v2/${kind}.png`;
@@ -29,7 +32,7 @@ if (testFuzzyRig) {
   $('.prototype-label').textContent = 'FOREST SCHOOL LAB · Fuzzy 骨骼动作测试版';
 }
 if (testFuzzyV5) {
-  $('.model-note').textContent = 'Fuzzy 试玩模型';
+  $('.model-note').textContent = 'Fuzzy 毛绒站立版';
   $('.prototype-label').textContent = 'FOREST SCHOOL LAB · 3D 线上试玩版';
 }
 let selectedLevel = 'easy', selectedMap = 0, unlockedMap = 0, modeShown = '', lastTime = 0, clock = 0, toastTime = 0;
@@ -60,9 +63,9 @@ function selectCharacter(character) {
   });
   $('#character-avatar').textContent = game.character === 'doodle' ? 'D' : 'F';
   $('#character-name').textContent = game.character === 'doodle' ? '涂涂 Doodle' : '钱钱 Fuzzy';
-  $('#menu-lead').innerHTML = game.character === 'doodle' ? '和涂涂一起，跑进立体的森林。<br>跳过倒木，展翅滑翔，收集一路的小惊喜。' : '和钱钱一起，跑进立体的森林。<br>跳过倒木，穿过树影，收集一路的小惊喜。';
+  $('#menu-lead').innerHTML = testSceneV2 ? sceneLead : game.character === 'doodle' ? '和涂涂一起，跑进立体的森林。<br>跳过倒木，展翅滑翔，收集一路的小惊喜。' : '和钱钱一起，跑进立体的森林。<br>跳过倒木，穿过树影，收集一路的小惊喜。';
   $('#skill-control-hint').textContent = game.character === 'doodle' ? '滑翔' : '冲刺';
-  $('.model-note').textContent = game.character === 'doodle' ? 'Doodle 试玩模型' : testFuzzyV5 ? 'Fuzzy 试玩模型' : testFuzzyRig ? 'Fuzzy 骨骼动作测试' : '临时模型';
+  $('.model-note').textContent = game.character === 'doodle' ? 'Doodle 绿色羽尾版' : testFuzzyV5 ? 'Fuzzy 毛绒站立版' : testFuzzyRig ? 'Fuzzy 骨骼动作测试' : '临时模型';
   $('.prototype-label').textContent = game.character === 'doodle' || testFuzzyV5 ? 'FOREST SCHOOL LAB · 3D 线上试玩版' : testFuzzyRig ? 'FOREST SCHOOL LAB · Fuzzy 骨骼动作测试版' : 'FOREST SCHOOL LAB · 3D 原型';
   syncMapOptions(); syncUI();
 }
@@ -89,14 +92,21 @@ function events() {
     if (event.type === 'collect') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 3, testSceneV2 ? game.collectible.kind : 'gold', event.y); beep(740, 0.065); }
     if (event.type === 'jump') beep(400, 0.1);
     if (event.type === 'break') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance)); toast('撞碎障碍 +20'); beep(240, 0.12); }
+    if (event.type === 'animal-warning') beep(590, 0.12);
+    if (event.type === 'precision') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), event.combo ? 16 : 8, 'gold'); toast(event.combo ? '精准三连！越障 +10 · 连击奖励 +30' : `精准越障 +10 · 连击 ${event.streak}/3`, 2); beep(event.combo ? 1040 : 800, 0.15); }
+    if (event.type === 'animal-evade') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 8, 'gold'); toast('小动物被冲刺吓跑了！'); beep(500, 0.12); }
     if (event.type === 'dash') { toast('冲刺保护！撞碎前方障碍'); beep(520, 0.2); }
     if (event.type === 'glide') { toast('涂涂展翅！缓慢下降，越过障碍'); beep(620, 0.2); }
     if (event.type === 'shield') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 16, 'shield', event.y); toast('获得护盾：挡下一次撞击'); beep(680, 0.18); }
     if (event.type === 'magnet') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 16, 'magnet', event.y); toast(`磁铁启动：8 秒吸取${game.collectible.name}`); beep(760, 0.18); }
     if (event.type === 'double') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 18, 'double', event.y); toast(`双倍积分！8 秒内${game.collectible.name}和距离加倍`, 2.2); beep(900, 0.2); }
     if (event.type === 'dash-refill') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 18, 'dash-refill', event.y); toast(event.bonus ? '技能已就绪 · +50 分' : '技能冷却已重置！', 2.2); beep(820, 0.2); }
+    if (event.type === 'heal-berry') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 14, 'heal-berry', event.y); toast(event.bonus ? '生命已满 · 红莓 +80 分' : '吃到红莓 · 恢复一颗心'); beep(880, 0.18); }
+    if (event.type === 'golden-seed') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 16, 'golden-seed', event.y); toast('金种子 · +120 分'); beep(940, 0.2); }
+    if (event.type === 'poison-mushroom') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 12, 'poison-mushroom', event.y); toast(event.dashProtected ? '冲撞保护挡住毒蘑菇' : event.absorbed ? '护盾挡住毒蘑菇' : event.immune ? '无敌状态避开毒蘑菇' : '误食毒蘑菇 · 失去一颗心'); beep(180, 0.2); }
+    if (event.type === 'sticky-web') { world.burst(event.lane * LANE_WIDTH, -(event.distance - game.distance), 12, 'sticky-web', event.y); toast(event.immune ? '冲撞保护穿过蛛网' : '碰到蛛网 · 技能冷却延长'); beep(210, 0.2); }
     if (event.type === 'shield-hit') { toast('护盾挡住了撞击！'); beep(300, 0.2); }
-    if (event.type === 'hurt') { toast('碰到了，换条小路试试'); beep(150, 0.18); }
+    if (event.type === 'hurt') { toast(event.cause === 'animal' ? '被小动物撞到了！换道或跳过它' : '碰到了，换条小路试试'); beep(150, 0.18); }
     if (event.type === 'heal') { toast('满 3000 分，恢复一颗心 ♥'); beep(880, 0.2); }
     if (event.type === 'mission-complete') { toast(`${event.label}完成 · +150 分`, 2.2); beep(960, 0.18); }
   }
@@ -125,6 +135,9 @@ function syncUI() {
   $('#mission-fill').style.width = `${game.mission.progress / game.mission.target * 100}%`;
   $('#mission').classList.toggle('done', game.mission.completed);
   $('#mission-alert').textContent = game.mission.completed ? '✓' : '!';
+  const dangerLanes = [...new Set(game.obstacles.filter(ob => ob.type === 'animal' && ob.warned && !ob.passed && !ob.broken && ob.distance > game.distance - 1.7).map(ob => ob.lane))];
+  $('#animal-warning').hidden = !dangerLanes.length || game.mode !== 'running';
+  $('#animal-warning').textContent = dangerLanes.length ? `⚠ ${dangerLanes.map(lane => ['左跑道', '中跑道', '右跑道'][lane + 1]).join('、')} · 小动物！换道或跳跃` : '';
   const doodle = game.character === 'doodle';
   const activeSkill = doodle ? game.glide : game.dash;
   const dashState = activeSkill > 0 ? 'active' : game.cooldown > 0 ? 'cooling' : 'ready';
@@ -137,9 +150,13 @@ function syncUI() {
   $('#dash').disabled = game.cooldown > 0 || doodle && game.mode === 'running' && game.y <= 0.08;
   $('#dash small').textContent = dashState === 'active' ? '生效中' : dashState === 'cooling' ? `${game.cooldown.toFixed(1)}s` : doodle ? '滑翔' : '冲撞';
   $('#dash').setAttribute('aria-label', doodle ? dashState === 'active' ? `滑翔生效中，剩余 ${game.glide.toFixed(1)} 秒` : dashState === 'cooling' ? `滑翔冷却，剩余 ${game.cooldown.toFixed(1)} 秒` : '滑翔，跳起后使用' : dashState === 'active' ? `冲撞生效中，剩余 ${game.dash.toFixed(1)} 秒` : dashState === 'cooling' ? `冲撞冷却，剩余 ${game.cooldown.toFixed(1)} 秒` : '冲撞，可撞碎前方障碍');
-  if (testDoodle && game.mode === 'menu') {
-    $('#start-btn').disabled = doodle && world.modelState.status !== 'ready';
-    $('#start-btn span').textContent = doodle && world.modelState.status === 'loading' ? '涂涂正在准备…' : doodle && world.modelState.status === 'fallback' ? '涂涂模型加载失败' : '开始森林冒险';
+  if (game.mode === 'menu') {
+    const loading = world.modelState.status === 'loading';
+    $('#start-btn').disabled = loading || doodle && world.modelState.status !== 'ready';
+    $('#start-btn span').textContent = loading ? `${doodle ? '涂涂' : '钱钱'}正在准备…` : world.modelState.status === 'fallback' ? doodle ? '涂涂模型加载失败' : '使用备用角色开始' : '开始森林冒险';
+    if (loading) $('.model-note').textContent = '角色载入中';
+    else if (world.modelState.status === 'fallback') $('.model-note').textContent = '角色载入失败 · 备用造型';
+    else if (world.modelState.status === 'ready') $('.model-note').textContent = doodle ? 'Doodle 绿色羽尾版' : testFuzzyV5 ? 'Fuzzy 毛绒站立版' : '角色准备好了';
   }
   $('#toast').classList.toggle('visible', toastTime > 0);
   if (modeShown === game.mode) return;
@@ -186,7 +203,7 @@ function syncUI() {
   }
 }
 function start() {
-  if (game.character === 'doodle' && world.modelState.status !== 'ready') return;
+  if (world.modelState.status === 'loading' || game.character === 'doodle' && world.modelState.status !== 'ready') return;
   clearBoost(); game.reset(selectedLevel, MAPS[selectedMap].id); world.setMap(game.mapId); if (testSceneV2) { world.resetViews(); world.resetEffects(); } toastTime = 0; events(); syncUI(); $('#scene').focus({ preventScroll: true });
   toast('空格跳跃 · 按住 W/↑ 加速 · 左右换道', 3.3);
 }
@@ -231,15 +248,19 @@ window.addEventListener('keyup', event => {
   if (key === 'w' || key === 'arrowup') { boostKeys.delete(key); game.setBoost(boostKeys.size > 0); syncUI(); }
 });
 let gesture = null;
-$('#scene').addEventListener('pointerdown', e => { if (game.mode !== 'running') return; gesture = { id: e.pointerId, x: e.clientX, y: e.clientY }; $('#scene').setPointerCapture(e.pointerId); });
-$('#scene').addEventListener('pointermove', e => {
-  if (!gesture || gesture.id !== e.pointerId) return;
-  const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
-  action(Math.abs(dx) > Math.abs(dy) ? dx > 0 ? 'right' : 'left' : dy > 0 ? 'slide' : 'jump'); gesture = null;
+$('#scene').addEventListener('pointerdown', e => {
+  if (game.mode !== 'running') return;
+  const result = reduceGesture(gesture, 'down', e);
+  if (result.state === gesture) return;
+  gesture = result.state;
+  try { $('#scene').setPointerCapture(e.pointerId); } catch { /* Pointer may already be canceled. */ }
 });
-$('#scene').addEventListener('pointerup', e => { if (gesture?.id === e.pointerId) action('jump'); gesture = null; });
-$('#scene').addEventListener('pointercancel', () => { gesture = null; });
+for (const type of ['move', 'up', 'cancel']) $('#scene').addEventListener(`pointer${type}`, e => {
+  const result = reduceGesture(gesture, type, e); gesture = result.state;
+  if (result.action) action(result.action);
+  if (type !== 'move' && $('#scene').hasPointerCapture(e.pointerId)) $('#scene').releasePointerCapture(e.pointerId);
+});
+$('#scene').addEventListener('lostpointercapture', e => { gesture = reduceGesture(gesture, 'cancel', e).state; });
 window.addEventListener('blur', () => { gesture = null; clearBoost(); game.pause(); syncUI(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { clearBoost(); game.pause(); syncUI(); } lastTime = 0; });
 window.addEventListener('resize', world.resize); document.addEventListener('fullscreenchange', world.resize);

@@ -9,7 +9,7 @@
     previewUrl.searchParams.delete('testMap');
     if (previewUrl.href !== location.href) history.replaceState(null, '', previewUrl.href);
   </script>
-  <link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css">
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css?v=release-20261004">
 </head>
 <body>
   <main id="app">
@@ -25,7 +25,7 @@
         <fieldset id="character-options" class="character-options" hidden><legend>选择小伙伴</legend><div class="level-options"><button data-character="fuzzy" class="selected" aria-pressed="true">钱钱 Fuzzy<small>冲撞障碍</small></button><button data-character="doodle" aria-pressed="false">涂涂 Doodle<small>空中滑翔</small></button></div></fieldset>
         <label class="map-picker" for="map-select">选择地图 <select id="map-select" aria-label="选择地图"></select></label>
         <fieldset id="levels"><legend>选择难度</legend><div class="level-options">
-          <button data-level="easy" class="selected" aria-pressed="true">简单<small>5心 · 1.00×</small></button><button data-level="normal" aria-pressed="false">普通<small>4心 · 1.50×</small></button><button data-level="hard" aria-pressed="false">困难<small>3心 · 2.00×</small></button><button data-level="nightmare" aria-pressed="false">挑战<small>2心 · 2.50×</small></button>
+          <button data-level="easy" class="selected" aria-pressed="true">简单<small>5心 · 1.00×</small></button><button data-level="normal" aria-pressed="false">普通<small>4心 · 2.00×</small></button><button data-level="hard" aria-pressed="false">困难<small>3心 · 3.00×</small></button><button data-level="nightmare" aria-pressed="false">挑战<small>2心 · 5.00×</small></button>
         </div></fieldset>
         <button id="start-btn" class="primary" disabled><span>正在唤醒森林…</span><span aria-hidden="true">↗</span></button>
         <div class="menu-foot"><span>个人最佳 <b id="best">0</b> 分</span><a href="https://willzhan1983.github.io/forest-school-runner/" target="_blank" rel="noopener">玩原来的 2D 版 ↗</a></div>
@@ -40,6 +40,7 @@
       <div id="powerups" class="powerups" hidden><span id="shield-status" hidden><img src="./assets/items/shield.png" alt="">护盾 ×1</span><span id="magnet-status" hidden><img src="./assets/items/magnet.png" alt="">磁铁 <b id="magnet-time">0</b>s</span><span id="double-status" hidden><img alt="">双倍 <b id="double-time">0</b>s</span></div>
       <div id="dash-status" class="dash-status" data-state="ready"><span id="skill-label">ϟ 冲撞技能</span><strong id="dash-state">可使用</strong><small id="dash-time">撞碎前方障碍</small><i><b id="dash-fill"></b></i></div>
       <div id="toast" role="status" aria-live="polite"></div>
+      <div id="animal-warning" role="status" aria-live="polite" hidden></div>
       <div class="controls"><div class="steer"><button data-action="left" aria-label="向左换道">←</button><button data-action="right" aria-label="向右换道">→</button></div><div class="actions"><button data-action="slide" aria-label="滑铲">↓<small>滑铲</small></button><button data-action="jump" aria-label="跳跃">↑<small>跳跃</small></button><button id="dash" data-action="dash" aria-label="冲撞"><span id="skill-icon">ϟ</span><small>冲撞</small></button></div></div>
     </section>
     <section id="dialog" class="screen dialog" hidden><div class="dialog-card"><p class="eyebrow" id="dialog-kicker">TAKE A LITTLE BREAK</p><h2 id="dialog-title">森林等你回来</h2><p id="dialog-copy"></p><div id="result-stats" hidden></div><button id="resume" class="primary">继续奔跑 →</button><button id="next-map" class="primary" hidden>前往下一张地图 →</button><button id="restart" class="primary" hidden>再跑一次 ↗</button><button id="home" class="secondary">返回首页</button></div></section>
@@ -48,7 +49,7 @@
   </main>
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
   <script type="module">
-    import('./main.js').catch(error => {
+    import('./main.js?v=speed-1235-20261004').catch(error => {
       console.error(error);
       document.querySelector('#failure').hidden = false;
       document.querySelector('#failure-copy').textContent = '3D 加载失败。可刷新重试，或先玩原来的 2D 版本。';
