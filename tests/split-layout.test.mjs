@@ -12,7 +12,7 @@ test('loads external CSS and JavaScript without inline game blocks', async () =>
   const html = await readProjectFile('index.html');
 
   assert.match(html, /href="css\/game\.css"/);
-  assert.match(html, /src="js\/game\.js\?v=2d-speed-20261004"/);
+  assert.match(html, /src="js\/game\.js\?v=2d-play-20261004"/);
   assert.doesNotMatch(html, /<style>/);
   assert.doesNotMatch(html, /<script>/);
 });

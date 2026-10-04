@@ -154,6 +154,10 @@ function testActionState(c, p){
   return 'run';
 }
 
+function runFrameIndex(phase, count){
+  return Math.floor((phase % (Math.PI * 2)) / (Math.PI * 2) * count);
+}
+
 function testActionSprite(c, p){
   if(!USE_EXTRACTED_TEST_SPRITES || !c.testSprites) return null;
   var state = testActionState(c, p);
@@ -163,7 +167,7 @@ function testActionSprite(c, p){
   if(frames.length > 1){
     if(state === 'run'){
       /* 跑步帧跟随脚步相位，速度提高时自然加快，避免用全局时间切帧而打滑。 */
-      idx = Math.floor((p.runPhase || 0) / 4) % frames.length;
+      idx = runFrameIndex(p.runPhase || 0, frames.length);
     }else if(state === 'dash'){
       /* 冲刺从起势帧顺序走到收势帧，不在短动作中循环跳帧。 */
       idx = Math.min(frames.length - 1,
@@ -655,6 +659,24 @@ function hitsObstacle(px, py, pw, ph, ob, previousX){
   return (overlapsNow || crossedThisFrame) && py < ob.y + ob.h && py + ph > ob.y + 4;
 }
 
+function hitsReward(px, py, pw, ph, x, y, radius, previousX){
+  var left = previousX === undefined ? x : Math.min(x, previousX);
+  var right = previousX === undefined ? x : Math.max(x, previousX);
+  return px < right + radius && px + pw > left - radius &&
+         py < y + radius && py + ph > y - radius;
+}
+
+function obstacleSpawnX(p, speed){
+  return Math.max(W + 40, p.x + p.w + speed * 75);
+}
+
+function obstacleWarning(list, p, speed){
+  return list.some(function(ob){
+    var distance = ob.x - p.x - p.w;
+    return !ob.dead && distance > 0 && distance <= speed * 75;
+  });
+}
+
 /* ★ 守卫 B（R1/R2 双保险之一）：只有主菜单允许改难度。
      playing / paused 态下难度键与点击全部屏蔽 —— 否则 maxLives 变化会让
      HUD 心形数量中途改变、速度/间距突变，普通 3 命 → 噩梦 1 命会瞬间致死。
@@ -851,8 +873,7 @@ function drawSheetFrame(c, p){
     idx = sh.frameJump || 0;
   }else{
     row = sh.rowRun || 0;
-    var rate = (sh.fps || 12) * (0.7 + Game.speed * 0.05);
-    idx = Math.floor(Game.time / 60 * rate) % cols;
+    idx = runFrameIndex(p.runPhase || 0, cols);
   }
 
   /* 按单帧原比例缩放，居中绘制 */
@@ -1852,7 +1873,7 @@ function spawnObstacle(){
   else { w = 54; h = 52; }  /* thorn */
 
   obstacles.push({
-    x:W + 40, y:GROUND_Y - h, w:w, h:h, type:type,
+    x:obstacleSpawnX(player, Game.speed), y:GROUND_Y - h, w:w, h:h, type:type,
     dead:false, deadT:0, deadRot:0, scored:false
   });
 }
@@ -2121,7 +2142,7 @@ function update(dt){
   }
 
   /* 跑动动画相位 */
-  if(p.grounded && !p.sliding) p.runPhase += dt * (0.34 + Game.speed * 0.035);
+  if(p.grounded && !p.sliding && !p.dashing) p.runPhase += move * 0.024;
 
   /* 身体倾斜 */
   var targetRot = 0;
@@ -2155,10 +2176,12 @@ function update(dt){
     if(platforms[k].x + platforms[k].w < -60) platforms.splice(k, 1);
   }
   for(k = pickups.length - 1; k >= 0; k--){
+    pickups[k].previousX = pickups[k].x;
     pickups[k].x -= move;
     if(pickups[k].x + 40 < -40) pickups.splice(k, 1);
   }
   for(k = powerups.length - 1; k >= 0; k--){
+    powerups[k].previousX = powerups[k].x;
     powerups[k].x -= move;
     if(powerups[k].x + 50 < -50) powerups.splice(k, 1);
   }
@@ -2257,8 +2280,7 @@ function update(dt){
   for(k = pickups.length - 1; k >= 0; k--){
     var pk = pickups[k];
     var cx = pk.x, cy = pk.y + Math.sin(Game.time * 0.09 + pk.seed) * 5;
-    if(p.x + 4 < cx + 13 && p.x + p.w - 4 > cx - 13 &&
-       p.y < cy + 13 && p.y + p.h > cy - 13){
+    if(hitsReward(p.x + 4, p.y, p.w - 8, p.h, cx, cy, 13, pk.previousX)){
       if(pk.kind === 'book'){
         Game.books++; addScore(15);
         floatText(cx, cy, (Buff.double > 0 ? '+30' : '+15'), '#7fb0ff');
@@ -2278,8 +2300,7 @@ function update(dt){
   for(k = powerups.length - 1; k >= 0; k--){
     var pu = powerups[k];
     var pcy2 = pu.y + Math.sin(Game.time * 0.07 + pu.seed) * 6;
-    if(p.x + 2 < pu.x + 17 && p.x + p.w - 2 > pu.x - 17 &&
-       p.y < pcy2 + 17 && p.y + p.h > pcy2 - 17){
+    if(hitsReward(p.x + 2, p.y, p.w - 4, p.h, pu.x, pcy2, 17, pu.previousX)){
       grantPowerup(pu.kind);
       powerups.splice(k, 1);
     }
@@ -2718,6 +2739,16 @@ function drawHUD(){
   ctx.font = '12px system-ui,sans-serif';
   ctx.fillStyle = 'rgba(255,236,192,.92)';
   ctx.fillText('每 1000 分回复 1 心', W / 2, 90);
+
+  /* 高速时障碍会提前在屏幕外生成；用文字预警补足可视反应时间。 */
+  if(obstacleWarning(obstacles, player, Game.speed * (player.dashing ? 2.15 : 1))){
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 18px system-ui,sans-serif';
+    ctx.fillStyle = '#fff4d8';
+    ctx.strokeStyle = 'rgba(80,30,10,.85)'; ctx.lineWidth = 5;
+    ctx.strokeText('前方障碍 · 准备跳跃', W - 24, 120);
+    ctx.fillText('前方障碍 · 准备跳跃', W - 24, 120);
+  }
 
   /* 暂停按钮 */
   var pr = pauseBtnRect();
@@ -3262,7 +3293,7 @@ requestAnimationFrame(loop);
 /* 调试用接口（控制台输入 __fsr.Game 可看状态） */
 window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARACTERS,
                  Buff:Buff, grantPowerup:grantPowerup, spawnPowerup:spawnPowerup,
-                 Audio2:Audio2, startGame:startGame, gameOver:gameOver, addScore:addScore,
+                 Audio2:Audio2, startGame:startGame, gameOver:gameOver, addScore:addScore, update:update,
                  /* ---- 难度系统（DIFF-002）---- */
                  DIFF:DIFF, DIFF_ORDER:DIFF_ORDER, diffCfg:diffCfg,
                  applyDifficulty:applyDifficulty, setDifficulty:setDifficulty,
@@ -3271,7 +3302,8 @@ window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARA
                  linkRect:linkRect,
                  obstacles:null, platforms:null, pickups:null,
                  getDiffId:function(){ return diffId; }, speedForDistance:speedForDistance, obstacleGapFor:obstacleGapFor, hitsObstacle:hitsObstacle,
-                 getTestActionState:testActionState,
+                 getTestActionState:testActionState, hitsReward:hitsReward,
+                 obstacleSpawnX:obstacleSpawnX, obstacleWarning:obstacleWarning, runFrameIndex:runFrameIndex,
                  getHover:function(){ return hoverDiff; },
                  getPressed:function(){ return pressedDiff; },
                  Input:Input,
@@ -3280,6 +3312,7 @@ window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARA
                     故用取值函数而非快照 */
                  getObstacles:function(){ return obstacles; },
                  getPlatforms:function(){ return platforms; },
-                 getPickups:function(){ return pickups; } };
+                 getPickups:function(){ return pickups; },
+                 getPowerups:function(){ return powerups; } };
 
 })();
