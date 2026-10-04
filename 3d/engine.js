@@ -2,11 +2,14 @@
 export const LANE_WIDTH = 2.5;
 export const BOOST_MULTIPLIER = 1.3;
 export const DASH_DURATION = 1.5, DASH_COOLDOWN = 6;
+const ANIMAL_CHARGE_RANGE = 60, ANIMAL_CHARGE_SPEED = 12, ANIMAL_WARNING_SECONDS = 1.2;
+const INPUT_BUFFER_SECONDS = 0.18;
+const EXTRA_ITEMS = ['heal-berry', 'golden-seed', 'poison-mushroom', 'sticky-web'];
 export const LEVELS = {
   easy: { label: '简单', hearts: 5, speedFactor: 1, gapPenalty: 0, minGap: 2.05, double: 0, doubleCap: 0.65 },
-  normal: { label: '普通', hearts: 4, speedFactor: 1.5, gapPenalty: 0.1, minGap: 2, double: 0.3, doubleCap: 0.75 },
-  hard: { label: '困难', hearts: 3, speedFactor: 2, gapPenalty: 0.2, minGap: 1.95, double: 0.5, doubleCap: 0.85 },
-  nightmare: { label: '挑战', hearts: 2, speedFactor: 2.5, gapPenalty: 0.3, minGap: 1.9, double: 0.65, doubleCap: 0.92 }
+  normal: { label: '普通', hearts: 4, speedFactor: 2, gapPenalty: 0.1, minGap: 2, double: 0.3, doubleCap: 0.75 },
+  hard: { label: '困难', hearts: 3, speedFactor: 3, gapPenalty: 0.2, minGap: 1.95, double: 0.5, doubleCap: 0.85 },
+  nightmare: { label: '挑战', hearts: 2, speedFactor: 5, gapPenalty: 0.3, minGap: 1.9, double: 0.65, doubleCap: 0.92 }
 };
 export const MAPS = [
   { id: 'china', label: '中国竹林', goal: 20000, speed: 24, reaction: 2.7, double: 0.18 },
@@ -59,7 +62,7 @@ export class Runner {
     this.mode = 'running'; this.distance = 0; this.speed = this.map.speed * LEVELS[this.level].speedFactor; this.boosting = false; this.time = 0;
     this.lane = 0; this.x = 0; this.y = 0; this.vy = 0;
     this.slide = 0; this.dash = 0; this.glide = 0; this.cooldown = 0; this.invincible = 0;
-    this.jumpBuffer = 0; this.landing = 0;
+    this.jumpBuffer = 0; this.slideBuffer = 0; this.landing = 0; this.precisionStreak = 0;
     this.hearts = LEVELS[this.level].hearts; this.maxHearts = this.hearts;
     this.shield = 0; this.magnet = 0; this.doubleScore = 0;
     this.score = 0; this.acorns = 0; this.nextHeal = 3000;
@@ -78,11 +81,13 @@ export class Runner {
     if (action === 'left' || action === 'right') {
       this.lane = Math.max(-1, Math.min(1, this.lane + (action === 'left' ? -1 : 1)));
     } else if (action === 'jump') {
+      this.slideBuffer = 0;
       if (this.y <= 0.001) { this.vy = 9.6; this.slide = 0; this.jumpBuffer = 0; this.events.push({ type: 'jump' }); }
-      else this.jumpBuffer = 0.14;
+      else this.jumpBuffer = INPUT_BUFFER_SECONDS;
     } else if (action === 'slide') {
-      if (this.y > 0.08) return false;
-      this.slide = 1.05; this.jumpBuffer = 0;
+      this.jumpBuffer = 0;
+      if (this.y > 0.08) this.slideBuffer = INPUT_BUFFER_SECONDS;
+      else { this.slide = 1.05; this.slideBuffer = 0; }
     } else if (action === 'dash') {
       if (this.cooldown > 0 || this.character === 'doodle' && this.y <= 0.08) return false;
       this.cooldown = DASH_COOLDOWN;
@@ -111,7 +116,8 @@ export class Runner {
     }
   }
   generate() {
-    while (this.nextRow < Math.min(this.distance + 190, this.map.goal - 20)) {
+    const lookAhead = Math.max(190, (this.speed + ANIMAL_CHARGE_SPEED) * ANIMAL_WARNING_SECONDS + 20);
+    while (this.nextRow < Math.min(this.distance + lookAhead, this.map.goal - 20)) {
       const n = this.rowIndex++, z = this.nextRow;
       // At most two blocked lanes, always one complete open route.
       if (n % 3 === 0) {
@@ -119,23 +125,32 @@ export class Runner {
         this.route = routes[Math.floor(this.random() * routes.length)];
       }
       const lane = this.route.lanes[n % 3];
-      const type = this.route.types[n % 3];
+      const progress = Math.min(z / this.map.goal, 1);
+      const itemStride = { easy: 8, normal: 7, hard: 6, nightmare: 5 }[this.level];
+      const extraItemRow = this.sceneV2 && n > 0 && n % itemStride === 1 && n % 7 !== 0;
+      const animal = this.sceneV2 && (n === 3 || n > 3 && n % 7 !== 0 && !extraItemRow &&
+        this.random() < { easy: 0.08, normal: 0.12, hard: 0.16, nightmare: 0.2 }[this.level] + 0.06 * progress);
+      const type = animal ? 'animal' : this.route.types[n % 3];
       const options = [-1, 0, 1].filter(l => l !== lane && (this.previousSafe === null || Math.abs(l - this.previousSafe) <= 1));
       const safe = options[Math.floor(this.random() * options.length)];
       const blocked = [lane];
-      const progress = Math.min(z / this.map.goal, 1);
-      if (n > 2 && n % 5 !== 0 && this.random() < Math.min(LEVELS[this.level].doubleCap, LEVELS[this.level].double + this.map.double + 0.53 * progress)) {
+      if (!animal && n > 2 && n % 5 !== 0 && this.random() < Math.min(LEVELS[this.level].doubleCap, LEVELS[this.level].double + this.map.double + 0.53 * progress)) {
         blocked.push([-1, 0, 1].find(l => l !== lane && l !== safe));
       }
       this.previousSafe = safe;
-      blocked.forEach(l => this.obstacles.push({ id: ++this.id, lane: l, distance: z, type, passed: false, broken: false }));
-      this.rows.push({ distance: z, blocked: [...blocked], safe, passed: false, hit: false });
+      const row = { distance: z, blocked: [...blocked], safe, passed: false, hit: false };
+      blocked.forEach(l => this.obstacles.push({ id: ++this.id, lane: l, distance: z, type, row, passed: false, broken: false }));
+      this.rows.push(row);
       for (let i = 0; i < 3; i++) this.pickups.push({ id: ++this.id, kind: 'acorn', lane: safe, distance: z - 12 + i * 4, y: 0.8, taken: false });
-      for (let i = 0; i < 6; i++) this.pickups.push({ id: ++this.id, kind: 'acorn', lane, distance: z - 10 + i * 3, y: type === 'branch' ? 0.8 : 1.8, taken: false });
+      if (!animal) for (let i = 0; i < 6; i++) this.pickups.push({ id: ++this.id, kind: 'acorn', lane, distance: z - 10 + i * 3, y: type === 'branch' ? 0.8 : 1.8, taken: false });
       if (blocked.length === 2) for (let i = 0; i < 3; i++) this.pickups.push({ id: ++this.id, kind: 'acorn', lane: blocked[1], distance: z - 12 + i * 4, y: type === 'branch' ? 0.8 : 1.8, taken: false });
       if (n % 7 === 0) {
-        const kind = this.sceneV2Active ? ['shield', 'magnet', 'double', 'dash-refill'][n / 7 % 4] : n % 14 === 0 ? 'shield' : 'magnet';
+        const kind = this.sceneV2 ? ['shield', 'magnet', 'double', 'dash-refill'][n / 7 % 4] : n % 14 === 0 ? 'shield' : 'magnet';
         this.pickups.push({ id: ++this.id, kind, lane: kind === 'shield' ? safe : lane, distance: z - 20, y: 0.85, taken: false });
+      }
+      if (extraItemRow) {
+        const kind = EXTRA_ITEMS[Math.floor(n / itemStride) % EXTRA_ITEMS.length];
+        this.pickups.push({ id: ++this.id, kind, lane: kind === 'heal-berry' ? safe : lane, distance: z - 20, y: 0.85, taken: false });
       }
       // Increase decisions per second at cruise speed; boosting trades reaction time for pace.
       const futureSpeed = (this.map.speed + 12 * progress) * LEVELS[this.level].speedFactor;
@@ -158,7 +173,7 @@ export class Runner {
       if (this.mission.kind === 'collect') this.mission.label = `收集${this.collectible.name}`;
     }
     this.x += Math.sign(this.lane * LANE_WIDTH - this.x) * Math.min(Math.abs(this.lane * LANE_WIDTH - this.x), 17 * dt);
-    for (const key of ['slide', 'dash', 'glide', 'cooldown', 'invincible', 'jumpBuffer', 'landing', 'magnet', 'doubleScore']) this[key] = Math.max(0, this[key] - dt);
+    for (const key of ['slide', 'dash', 'glide', 'cooldown', 'invincible', 'jumpBuffer', 'slideBuffer', 'landing', 'magnet', 'doubleScore']) this[key] = Math.max(0, this[key] - dt);
     if (this.y > 0 || this.vy > 0) {
       this.vy -= (this.glide > 0 ? 5 : 24) * dt;
       if (this.glide > 0) this.vy = Math.max(this.vy, -1.4);
@@ -166,6 +181,7 @@ export class Runner {
       if (this.y <= 0) {
         this.y = 0; this.vy = 0; this.glide = 0; this.landing = 0.13; this.events.push({ type: 'land' });
         if (this.jumpBuffer > 0) this.act('jump');
+        else if (this.slideBuffer > 0) this.act('slide');
       }
     }
     this.addScore((Math.floor(this.distance / 5) - Math.floor(previous / 5)) * 2, { doubleEligible: true });
@@ -176,26 +192,41 @@ export class Runner {
     }
     for (const ob of this.obstacles) {
       if (ob.passed || ob.broken) continue;
+      if (ob.type === 'animal' && !ob.warned && ob.distance - this.distance <= Math.max(ANIMAL_CHARGE_RANGE, (this.speed + ANIMAL_CHARGE_SPEED) * ANIMAL_WARNING_SECONDS + 1.7)) {
+        ob.warned = true; this.events.push({ type: 'animal-warning', lane: ob.lane });
+      }
+      if (ob.type === 'animal' && ob.distance - this.distance <= ANIMAL_CHARGE_RANGE && ob.distance > this.distance - 1.7) {
+        ob.distance -= ANIMAL_CHARGE_SPEED * dt;
+        if (ob.row) ob.row.distance = ob.distance;
+        ob.rushing = true;
+      }
       if (ob.distance < this.distance - 1.7) { ob.passed = true; continue; }
       const near = ob.distance - this.distance < 1.65 && ob.distance - previous > -1.65;
       if (!near || Math.abs(ob.lane * LANE_WIDTH - this.x) > 1.02) continue;
       if (this.dash > 0) {
-        ob.broken = true; this.addScore(20);
-        this.events.push({ type: 'break', lane: ob.lane, distance: ob.distance });
-        this.progressMission('break');
+        ob.broken = true;
+        if (ob.type === 'animal') this.events.push({ type: 'animal-evade', lane: ob.lane, distance: ob.distance });
+        else { this.addScore(20); this.events.push({ type: 'break', lane: ob.lane, distance: ob.distance }); this.progressMission('break'); }
       } else {
         const clears = ob.type === 'branch' ? this.slide > 0 && this.y < 0.1 : this.y > 1.02;
         if (!clears) {
           const row = this.rows.find(candidate => candidate.distance === ob.distance);
           if (row) row.hit = true;
+          this.precisionStreak = 0;
           if (this.invincible <= 0) {
             this.invincible = 1.8; ob.passed = true;
             if (this.shield) { this.shield = 0; this.events.push({ type: 'shield-hit' }); }
             else {
-              this.hearts--; this.events.push({ type: 'hurt' });
+              this.hearts--; this.events.push({ type: 'hurt', cause: ob.type });
               if (this.hearts <= 0) { this.mode = 'over'; this.doubleScore = 0; this.setBoost(false); this.events.push({ type: 'over' }); break; }
             }
           }
+        } else if (ob.type !== 'animal' && !ob.rewarded && previous < ob.distance && this.distance >= ob.distance) {
+          ob.rewarded = true; this.precisionStreak++;
+          const combo = this.precisionStreak === 3;
+          this.addScore(10 + (combo ? 30 : 0));
+          this.events.push({ type: 'precision', combo, streak: this.precisionStreak, lane: ob.lane, distance: ob.distance });
+          if (combo) this.precisionStreak = 0;
         }
       }
     }
@@ -215,8 +246,18 @@ export class Runner {
       if (acorn) { this.acorns++; this.addScore(10, { doubleEligible: true }); this.progressMission('collect'); this.events.push({ type: 'collect', lane: coin.lane, distance: coin.distance, y: coin.y }); }
       else if (coin.kind === 'shield') { this.shield = 1; this.events.push({ type: 'shield', lane: coin.lane, distance: coin.distance, y: coin.y }); }
       else if (coin.kind === 'magnet') { this.magnet = 8; this.events.push({ type: 'magnet', lane: coin.lane, distance: coin.distance, y: coin.y }); }
-      else if (this.sceneV2Active && coin.kind === 'double') { this.doubleScore = 8; this.events.push({ type: 'double', lane: coin.lane, distance: coin.distance, y: coin.y }); }
-      else if (this.sceneV2Active && coin.kind === 'dash-refill') { const bonus = this.cooldown <= 0 ? 50 : 0; this.cooldown = 0; if (bonus) this.addScore(bonus); this.events.push({ type: 'dash-refill', bonus, lane: coin.lane, distance: coin.distance, y: coin.y }); }
+      else if (this.sceneV2 && coin.kind === 'double') { this.doubleScore = 8; this.events.push({ type: 'double', lane: coin.lane, distance: coin.distance, y: coin.y }); }
+      else if (this.sceneV2 && coin.kind === 'dash-refill') { const bonus = this.cooldown <= 0 ? 50 : 0; this.cooldown = 0; if (bonus) this.addScore(bonus); this.events.push({ type: 'dash-refill', bonus, lane: coin.lane, distance: coin.distance, y: coin.y }); }
+      else if (this.sceneV2 && coin.kind === 'heal-berry') { const bonus = this.hearts === this.maxHearts ? 80 : 0; if (bonus) this.addScore(bonus); else this.hearts++; this.events.push({ type: 'heal-berry', bonus, lane: coin.lane, distance: coin.distance, y: coin.y }); }
+      else if (this.sceneV2 && coin.kind === 'golden-seed') { this.addScore(120); this.events.push({ type: 'golden-seed', lane: coin.lane, distance: coin.distance, y: coin.y }); }
+      else if (this.sceneV2 && coin.kind === 'poison-mushroom') {
+        const dashProtected = this.dash > 0, absorbed = !dashProtected && this.shield > 0, immune = dashProtected || !absorbed && this.invincible > 0;
+        if (absorbed) this.shield = 0;
+        else if (!immune) { this.hearts--; this.invincible = 1.8; }
+        this.events.push({ type: 'poison-mushroom', absorbed, immune, dashProtected, lane: coin.lane, distance: coin.distance, y: coin.y });
+        if (this.hearts <= 0) { this.mode = 'over'; this.doubleScore = 0; this.setBoost(false); this.events.push({ type: 'over' }); break; }
+      }
+      else if (this.sceneV2 && coin.kind === 'sticky-web') { const immune = this.dash > 0; if (!immune) this.cooldown = Math.min(DASH_COOLDOWN, Math.max(4, this.cooldown + 2)); this.events.push({ type: 'sticky-web', immune, lane: coin.lane, distance: coin.distance, y: coin.y }); }
     }
     this.obstacles = this.obstacles.filter(o => o.distance > this.distance - 18);
     this.pickups = this.pickups.filter(o => o.distance > this.distance - 12);
@@ -233,7 +274,7 @@ export class Runner {
     return {
       mode: this.mode, level: this.level, map: this.mapId, goal: this.map.goal, coordinates: 'x: left(-)/right(+); y: up; ahead: positive metres forward',
       distance: +this.distance.toFixed(1), speed: +this.speed.toFixed(2), boosting: this.boosting, score: this.score, acorns: this.acorns, hearts: this.hearts, maxHearts: this.maxHearts,
-      shield: this.shield, magnet: +this.magnet.toFixed(2), doubleScore: +this.doubleScore.toFixed(2), mission: { ...this.mission }, collectible: { ...this.collectible, count: this.acorns },
+      shield: this.shield, magnet: +this.magnet.toFixed(2), doubleScore: +this.doubleScore.toFixed(2), precisionStreak: this.precisionStreak, mission: { ...this.mission }, collectible: { ...this.collectible, count: this.acorns },
       player: { lane: this.lane, x: +this.x.toFixed(2), y: +this.y.toFixed(2), slide: +this.slide.toFixed(2), dash: +this.dash.toFixed(2), glide: +this.glide.toFixed(2), cooldown: +this.cooldown.toFixed(2), invincible: +this.invincible.toFixed(2) },
       obstacles: this.obstacles.filter(o => !o.broken && o.distance - this.distance < 80).map(o => ({ type: o.type, lane: o.lane, ahead: +(o.distance - this.distance).toFixed(1) })),
       pickups: this.pickups.filter(o => !o.taken && o.distance - this.distance < 50).map(o => ({ kind: !o.kind || o.kind === 'acorn' ? this.collectible.kind : o.kind, lane: o.lane, y: o.y, ahead: +(o.distance - this.distance).toFixed(1) }))

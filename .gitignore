@@ -3,6 +3,7 @@ diff-verify.js
 diff-shots.js
 diff-verify-result.txt
 shot-*.png
+3d/output/
 
 # QA 探查脚本与截图（保留正式的 regression-* 测试脚本）
 tests/_probe*
