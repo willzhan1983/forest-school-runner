@@ -621,10 +621,10 @@ var DIFF = {
     pfInit:900,  pfBase:760,  pfJitter:600
   },
   nightmare: {
-    id:'nightmare', name:'噩 梦', short:'5× 起速，2 颗心',
+    id:'nightmare', name:'噩 梦', short:'3.5× 起速，2 颗心',
     desc:'每跑 1000 米逐步提速，跑得越远越有挑战，2 颗心。',
     color:'#c2185b', colorDark:'#8e0e42', glow:'rgba(194,24,91,.45)',
-    speedBase:4.4 * 5,  rampDiv:700,
+    speedBase:4.4 * 3.5,  rampDiv:700,
     speedStepMeters:1000, speedStep:0.2,
     gapBase:800, gapMin:660, gapDiv:45, gapJitter:160, gapSpeedFactor:110,
     dblFrom:1e9, dblProb:0, doubleGap:0, doubleGapJitter:0,
@@ -732,7 +732,7 @@ var THEMES = [
 /* ===== 6. 游戏状态 ===== */
 var Game = {
   state:'menu', charId:'cat', paused:false,
-  score:0, books:0, acorns:0, lives:3, maxLives:3, nextHealScore:1000,
+  score:0, books:0, acorns:0, lives:3, maxLives:3, nextHealScore:3000,
   distance:0, best:0, leaderboard:[], speed:5.6,
   themeIndex:0, time:0, shake:0, banner:0, flash:0
 };
@@ -2008,7 +2008,7 @@ function grantPowerup(kind){
 function startGame(){
   Game.state = 'playing';
   Game.paused = false;
-  Game.score = 0; Game.books = 0; Game.acorns = 0; Game.nextHealScore = 1000;
+  Game.score = 0; Game.books = 0; Game.acorns = 0; Game.nextHealScore = 3000;
   /* ★ R4-1：起始速度必须按档位取，否则任何档位开局第一帧都会按 5.6 起步
      （简单档表现为"开局突然偏快，一帧后才降回 4.4"）。
      ★ R4-2：结算页「再跑一次」直接走 startGame()，不经过菜单/不会调
@@ -2372,7 +2372,7 @@ function drawBuffChip(x, y, kind, ratio, stacks){
   return x + (r + 3) * 2 + 8;
 }
 
-/* 统一加分入口：双倍分生效；每满 1000 分在未满血时回复 1 颗心。 */
+/* 统一加分入口：双倍分生效；每满 3000 分在未满血时回复 1 颗心。 */
 function addScore(n){
   Game.score += (Buff.double > 0) ? n * 2 : n;
   while(Game.score >= Game.nextHealScore){
@@ -2382,7 +2382,7 @@ function addScore(n){
       ring(player.x + player.w / 2, player.y + player.h / 2, '#ff9bac');
       for(var i = 0; i < 10; i++) spark(player.x + player.w / 2, player.y + player.h / 2, '#ff9bac');
     }
-    Game.nextHealScore += 1000;
+    Game.nextHealScore += 3000;
   }
 }
 
@@ -2738,7 +2738,7 @@ function drawHUD(){
   ctx.fillText('橡果 ' + Game.acorns + '   ·   书本 ' + Game.books, W / 2, 70);
   ctx.font = '12px system-ui,sans-serif';
   ctx.fillStyle = 'rgba(255,236,192,.92)';
-  ctx.fillText('每 1000 分回复 1 心', W / 2, 90);
+  ctx.fillText('每 3000 分回复 1 心', W / 2, 90);
 
   /* 高速时障碍会提前在屏幕外生成；用文字预警补足可视反应时间。 */
   if(obstacleWarning(obstacles, player, Game.speed * (player.dashing ? 2.15 : 1))){

@@ -47,31 +47,39 @@ test('2D scene and item art load on the normal homepage without test parameters'
     .map(path => access(new URL(path, root))));
 });
 
-test('every 1000 points restores exactly one missing heart and advances the next threshold', async () => {
+test('every 3000 points restores exactly one missing heart and advances the next threshold', async () => {
   const fsr = await loadGame();
   fsr.Game.maxLives = 5;
   fsr.Game.lives = 2;
-  fsr.Game.score = 999;
-  fsr.Game.nextHealScore = 1000;
+  fsr.Game.score = 2999;
+  fsr.Game.nextHealScore = 3000;
+
+  fsr.addScore(0);
+  assert.equal(fsr.Game.lives, 2, 'no healing before 3000 points');
 
   fsr.addScore(1);
   assert.deepEqual(
     { score:fsr.Game.score, lives:fsr.Game.lives, next:fsr.Game.nextHealScore },
-    { score:1000, lives:3, next:2000 }
+    { score:3000, lives:3, next:6000 }
   );
 
-  fsr.addScore(1000);
+  fsr.addScore(3000);
   assert.deepEqual(
     { score:fsr.Game.score, lives:fsr.Game.lives, next:fsr.Game.nextHealScore },
-    { score:2000, lives:4, next:3000 }
+    { score:6000, lives:4, next:9000 }
   );
+  fsr.addScore(9000);
+  assert.equal(fsr.Game.lives, 5, 'healing cannot exceed max lives');
+  assert.equal(fsr.Game.nextHealScore, 18000, 'full-health milestones are not banked');
+  fsr.startGame();
+  assert.equal(fsr.Game.nextHealScore, 3000, 'a new run resets the threshold');
 });
 
 test('difficulty levels keep gradually accelerating at 1000 m milestones with safe spacing', async () => {
   const fsr = await loadGame();
   const levels = ['easy', 'normal', 'hard', 'nightmare'].map(id => fsr.DIFF[id]);
 
-  assert.deepEqual(levels.map(level => level.speedBase), [1, 2, 3, 5].map(multiplier => 4.4 * multiplier));
+  assert.deepEqual(levels.map(level => level.speedBase), [1, 2, 3, 3.5].map(multiplier => 4.4 * multiplier));
 
   for (const level of levels.slice(1)) {
     assert.equal(fsr.speedForDistance(level, 0), level.speedBase, level.id + ' starts at its base speed');
@@ -136,8 +144,8 @@ test('a nightmare dash collects crossed rewards once and activates the crossed s
   const p = fsr.getPlayer();
   p.dashing = true;
   p.dashTimer = 34;
-  fsr.getPickups().push({ x:300, y:p.y + 34, kind:'book', seed:0 });
-  fsr.getPowerups().push({ x:300, y:p.y + 34, kind:'shield', seed:0 });
+  fsr.getPickups().push({ x:260, y:p.y + 34, kind:'book', seed:0 });
+  fsr.getPowerups().push({ x:260, y:p.y + 34, kind:'shield', seed:0 });
   fsr.update(3);
   assert.equal(fsr.Game.books, 1);
   assert.equal(fsr.Buff.shield, 1);
