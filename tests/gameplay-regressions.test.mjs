@@ -100,6 +100,81 @@ test('high-speed obstacles keep collision detection across a single frame', asyn
     'a jump above a crossing obstacle remains safe');
 });
 
+test('fast rewards are collected across a frame without collecting rewards above the player', async () => {
+  const fsr = await loadGame();
+  assert.equal(fsr.hitsReward(194, 390, 44, 68, 158, 420, 13, 300), true);
+  assert.equal(fsr.hitsReward(194, 390, 44, 68, 158, 300, 13, 300), false);
+  assert.equal(fsr.hitsReward(194, 390, 44, 68, 300, 420, 13, 320), false);
+  assert.equal(fsr.hitsReward(194, 390, 44, 68, 215, 420, 17), true);
+});
+
+test('high-speed obstacles spawn with warning time and dead obstacles do not warn', async () => {
+  const fsr = await loadGame();
+  const p = { x:190, w:52 };
+  for (const speed of [4.4, 8.8, 13.2, 22]) {
+    const x = fsr.obstacleSpawnX(p, speed);
+    assert.ok(x >= 1000);
+    assert.ok((x - p.x - p.w) / speed >= 75);
+  }
+  assert.equal(fsr.obstacleWarning([{x:1500,w:50,dead:false}], p, 22), true);
+  assert.equal(fsr.obstacleWarning([{x:1500,w:50,dead:true}], p, 22), false);
+  assert.equal(fsr.obstacleWarning([{x:100,w:50,dead:false}], p, 22), false);
+});
+
+test('run frames follow one continuous stride and wrap cleanly', async () => {
+  const fsr = await loadGame();
+  assert.equal(fsr.runFrameIndex(0, 4), 0);
+  assert.equal(fsr.runFrameIndex(Math.PI, 4), 2);
+  assert.equal(fsr.runFrameIndex(Math.PI * 2, 4), 0);
+  assert.equal(fsr.runFrameIndex(Math.PI * 2.5, 4), 1);
+});
+
+test('a nightmare dash collects crossed rewards once and activates the crossed shield', async () => {
+  const fsr = await loadGame();
+  fsr.setDifficulty('nightmare');
+  fsr.startGame();
+  const p = fsr.getPlayer();
+  p.dashing = true;
+  p.dashTimer = 34;
+  fsr.getPickups().push({ x:300, y:p.y + 34, kind:'book', seed:0 });
+  fsr.getPowerups().push({ x:300, y:p.y + 34, kind:'shield', seed:0 });
+  fsr.update(3);
+  assert.equal(fsr.Game.books, 1);
+  assert.equal(fsr.Buff.shield, 1);
+  assert.equal(fsr.getPickups().length, 0);
+  assert.equal(fsr.getPowerups().length, 0);
+  fsr.update(3);
+  assert.equal(fsr.Game.books, 1);
+  assert.equal(fsr.Buff.shield, 1);
+});
+
+test('running follows distance while pausing leaves the stride unchanged', async () => {
+  const fsr = await loadGame();
+  fsr.startGame();
+  const p = fsr.getPlayer();
+  fsr.update(1);
+  assert.equal(p.runPhase, fsr.Game.speed * 0.024);
+  const phase = p.runPhase;
+  fsr.Game.paused = true;
+  fsr.update(3);
+  assert.equal(p.runPhase, phase);
+});
+
+test('existing jump, fall, landing, dash and owl glide actions remain distinct', async () => {
+  const fsr = await loadGame();
+  fsr.Game.state = 'playing';
+  const p = { grounded:false, vy:-5 };
+  assert.equal(fsr.getTestActionState(fsr.CHARACTERS.cat, p), 'jump');
+  p.vy = 5;
+  assert.equal(fsr.getTestActionState(fsr.CHARACTERS.cat, p), 'fall');
+  p.grounded = true; p.landTimer = 9;
+  assert.equal(fsr.getTestActionState(fsr.CHARACTERS.cat, p), 'land');
+  p.dashing = true;
+  assert.equal(fsr.getTestActionState(fsr.CHARACTERS.cat, p), 'dash');
+  p.dashing = false; p.gliding = true;
+  assert.equal(fsr.getTestActionState(fsr.CHARACTERS.owl, p), 'glide');
+});
+
 test('the completion screen selects the Win action while menu preview remains Idle', async () => {
   const fsr = await loadGame();
   const p = { preview:false, hurtTimer:0, dashing:false, gliding:false, sliding:false, grounded:true, landTimer:0, vy:0 };
