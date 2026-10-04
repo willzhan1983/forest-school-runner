@@ -32,7 +32,7 @@ function fmt(n, d) { return (typeof n === 'number') ? n.toFixed(d === undefined 
     L.w('DIFF.normal 实测: ' + JSON.stringify(D));
 
     const constOk =
-      D.speedBase === 5.0 && D.rampDiv === 900 &&
+      D.speedBase === 4.4 * 2 && D.rampDiv === 900 &&
       D.speedStepMeters === 1000 && D.speedStep === 0.2 && D.gapSpeedFactor === 110 &&
       D.gapBase === 700 && D.gapMin === 560 && D.gapDiv === 36 && D.gapJitter === 140;
     R.add('A1-c', constOk, 'A1 普通档里程速度与动态安全间隔配置正确（5.0→5.2→5.4……）',

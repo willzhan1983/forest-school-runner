@@ -71,6 +71,8 @@ test('difficulty levels keep gradually accelerating at 1000 m milestones with sa
   const fsr = await loadGame();
   const levels = ['easy', 'normal', 'hard', 'nightmare'].map(id => fsr.DIFF[id]);
 
+  assert.deepEqual(levels.map(level => level.speedBase), [1, 2, 3, 5].map(multiplier => 4.4 * multiplier));
+
   for (const level of levels.slice(1)) {
     assert.equal(fsr.speedForDistance(level, 0), level.speedBase, level.id + ' starts at its base speed');
     assert.equal(fsr.speedForDistance(level, 9999), level.speedBase, level.id + ' does not accelerate before 1000 m');
@@ -79,7 +81,7 @@ test('difficulty levels keep gradually accelerating at 1000 m milestones with sa
     assert.equal(fsr.speedForDistance(level, 50000), level.speedBase + level.speedStep * 5, level.id + ' keeps accelerating after 2000 m');
     assert.ok(level.gapSpeedFactor >= 100, level.id + ' expands obstacle gaps as speed rises');
     const longRunSpeed = fsr.speedForDistance(level, 100000);
-    assert.ok(fsr.obstacleGapFor(level, 100000, longRunSpeed) / longRunSpeed >= level.gapSpeedFactor,
+    assert.ok(fsr.obstacleGapFor(level, 100000, longRunSpeed) >= longRunSpeed * level.gapSpeedFactor,
       level.id + ' keeps the same obstacle reaction time during a long run');
     assert.equal(level.dblProb, 0, level.id + ' has no double obstacles');
   }
