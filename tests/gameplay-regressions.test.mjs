@@ -264,6 +264,18 @@ test('owl skill starts gliding in midair without an audio exception', async () =
   assert.equal(owl.gliding, true);
 });
 
+test('owl skill keys keep gliding across frames while held and stop on release', async () => {
+  for (const key of ['shift', 'd']) {
+    const fsr = await loadGame(); fsr.Game.charId = 'owl'; fsr.startGame();
+    const owl = fsr.getPlayer(); owl.grounded = false; owl.y = 200; owl.vy = 1;
+    fsr.Input.keys[key] = true; fsr.doSkill();
+    fsr.update(1); fsr.update(1);
+    assert.equal(owl.gliding, true, key + ' stays active after frame updates');
+    fsr.Input.keys[key] = false; fsr.update(1);
+    assert.equal(owl.gliding, false, key + ' stops on release');
+  }
+});
+
 test('each 2D theme lasts about twenty seconds at the starting speed', async () => {
   const fsr = await loadGame();
   fsr.startGame();
