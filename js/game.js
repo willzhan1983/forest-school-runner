@@ -1497,7 +1497,7 @@ function updateSkillHold(){
   var p = player;
   if(!p) return;
   var c = CHARACTERS[Game.charId];
-  var holding = Input.jumpHeld || Input.pointerDown;
+  var holding = Input.jumpHeld || Input.pointerDown || Input.keys.shift || Input.keys.d;
   if(c.id === 'owl' && !p.grounded && p.vy > 0 && holding){
     if(!p.gliding){ p.gliding = true; }
   }else{

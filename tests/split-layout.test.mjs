@@ -12,7 +12,7 @@ test('loads external CSS and JavaScript without inline game blocks', async () =>
   const html = await readProjectFile('index.html');
 
   assert.match(html, /href="css\/game\.css\?v=audit-20261014"/);
-  assert.match(html, /src="js\/game\.js\?v=audit-20261014"/);
+  assert.match(html, /src="js\/game\.js\?v=glide-20261014"/);
   for (const name of ['tuning', 'config', 'audio', 'asset-loader']) {
     assert.ok(html.indexOf('src="js/' + name + '.js') < html.indexOf('src="js/game.js'));
   }
