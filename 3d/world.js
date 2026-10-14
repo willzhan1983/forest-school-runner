@@ -1,7 +1,8 @@
 import * as THREE from './vendor/three.module.js';
 import { addFuzzyShortFur } from './fuzzy-fur.js?v=standing-fur-20261002';
 import { addFuzzyPlushFur } from './fuzzy-plush-fur.js?v=plush-20261004';
-import { LANE_WIDTH, MAPS } from './engine.js';
+import { LANE_WIDTH, MAPS, warningLanes } from './engine.js?v=audit-20261014';
+import { renderPixelRatio, sampleRenderQuality } from './render-quality.js';
 
 const MAP_LOOKS = {
   china: { sky: 0xc4dfcf, ground: 0x729663, path: 0xccbe91, trunk: 0x6c8a59, crown: 0x70a56b, cone: 0x4d8e61, bank: 0x91ab65, petals: 0xe8db8e },
@@ -127,8 +128,6 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   const tail = new THREE.Group(); tail.position.set(0, 0.7, 0.27); procedural.add(tail);
   for (let i = 0; i < 4; i++) ball(i === 3 ? 0xf0ecdd : 0x8b9ba4, Math.sin(i * 0.5) * 0.32, i * 0.15, 0.24 + i * 0.17, 0.2 - i * 0.025, 0.22, 0.25, tail);
   const params = new URLSearchParams(location.search);
-  const v5Preview = params.has('testFuzzyV5');
-  const rigPreview = params.has('testFuzzyRig') || v5Preview;
   let modelRequest = 0, loadedModel = null;
   let footSamples = [];
   const footPoint = new THREE.Vector3();
@@ -148,26 +147,16 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     if (loadedModel) { modelState.mixer?.stopAllAction(); modelState.mixer?.uncacheRoot(loadedModel); pose.remove(loadedModel); disposeModel(loadedModel); loadedModel = null; }
     modelState.mixer = null; modelState.actions = null; modelState.active = null; modelState.clips = []; footSamples = [];
     procedural.visible = true;
-    if (character !== 'doodle' && !rigPreview && !params.has('testFuzzyModel')) {
-      modelState.status = 'off'; return;
-    }
     modelState.status = 'loading';
     import('./vendor/addons/loaders/GLTFLoader.js').then(async ({ GLTFLoader }) => {
       const path = character === 'doodle' ? './assets/chars/doodle/v4-test/doodle-green-tail-test.glb'
-        : v5Preview ? './assets/chars/fuzzy/v5-test/fuzzy-v5-plush-run-test.glb' : rigPreview ? './assets/chars/fuzzy/fuzzy-rig-v1.glb' : './assets/chars/fuzzy/fuzzy-test.glb';
+        : './assets/chars/fuzzy/v5-test/fuzzy-v5-plush-run-meshopt.glb';
       const loader = new GLTFLoader();
-      let gltf;
-      if (character !== 'doodle' && v5Preview && typeof DecompressionStream !== 'undefined') {
-        try {
-          const response = await fetch(`${path}.gz`);
-          if (!response.ok) throw new Error(`Character download failed: ${response.status}`);
-          const blob = await response.blob();
-          // Servers may already decode Content-Encoding: gzip before fetch returns.
-          const buffer = await blob.slice(0, 4).text() === 'glTF' ? await blob.arrayBuffer()
-            : await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-          gltf = await loader.parseAsync(buffer, new URL('.', new URL(path, location.href)).href);
-        } catch { gltf = await loader.loadAsync(path); }
-      } else gltf = await loader.loadAsync(path);
+      if(character !== 'doodle'){
+        const { MeshoptDecoder } = await import('./vendor/meshopt_decoder.mjs');
+        loader.setMeshoptDecoder(MeshoptDecoder);
+      }
+      const gltf = await loader.loadAsync(path);
       if (request !== modelRequest) { disposeModel(gltf.scene); return; }
       const model = gltf.scene;
       const bounds = new THREE.Box3().setFromObject(model);
@@ -181,12 +170,12 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
       pose.add(model);
       loadedModel = model;
       procedural.visible = false;
-      if ((rigPreview || character === 'doodle') && gltf.animations.length) {
+      if (gltf.animations.length) {
         modelState.mixer = new THREE.AnimationMixer(model);
         modelState.actions = Object.fromEntries(gltf.animations.map(clip => [clip.name, modelState.mixer.clipAction(clip)]));
         modelState.clips = gltf.animations.map(clip => clip.name);
       }
-      if (character === 'fuzzy' && v5Preview) model.traverse(child => {
+      if (character === 'fuzzy') model.traverse(child => {
         if (!child.isSkinnedMesh) return;
         const positions = child.geometry.attributes.position;
         child.geometry.computeBoundingBox();
@@ -203,12 +192,12 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
         }
         footSamples.push({ mesh: child, indices: [...cells.values()] });
       });
-      if (character === 'fuzzy' && v5Preview && !params.has('flatFur')) model.userData.disposeShortFur = params.has('shortFur')
+      if (character === 'fuzzy' && !params.has('flatFur')) model.userData.disposeShortFur = params.has('shortFur')
         ? addFuzzyShortFur(model, { standing: true, length: 0.018 }) : addFuzzyPlushFur(model);
       modelState.status = 'ready';
     }).catch(error => { if (request === modelRequest) { console.warn('Character loader unavailable; using fallback', error); modelState.status = 'fallback'; } });
   }
-  if (rigPreview || params.has('testFuzzyModel')) setCharacter('fuzzy');
+  setCharacter('fuzzy');
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.78, 24), new THREE.MeshBasicMaterial({ color: 0x314c32, transparent: true, opacity: 0.2, depthWrite: false }));
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.07; scene.add(shadow);
   const aura = new THREE.Mesh(new THREE.SphereGeometry(1.15, 16, 12), new THREE.MeshBasicMaterial({ color: 0x65e4e4, transparent: true, opacity: 0.55, depthWrite: false, wireframe: true }));
@@ -425,14 +414,19 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     applyScenePlants(mapId);
   }
   const cameraTarget = new THREE.Vector3(), lookTarget = new THREE.Vector3();
+  let renderQuality = { lastTime: null, slowMs: 0, reduced: false };
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    portrait = h > w; renderer.setPixelRatio(Math.min(devicePixelRatio, portrait ? 1.2 : 1.6)); renderer.setSize(w, h, false); camera.aspect = w / h;
+    portrait = h > w; renderer.setPixelRatio(renderPixelRatio(w, h, devicePixelRatio, renderQuality.reduced)); renderer.setSize(w, h, false); camera.aspect = w / h;
     if (activeMapId) applyBackground(activeMapId);
     camera.fov = portrait ? 62 : 52; camera.updateProjectionMatrix(); cameraReady = false;
   }
   resize();
   function draw(game, dt, clock) {
+    const quality = sampleRenderQuality(renderQuality, performance.now(), game.mode === 'running' && dt > 0 && !document.hidden && modelState.status !== 'loading');
+    const reduce = quality.reduced && !renderQuality.reduced;
+    renderQuality = quality;
+    if (reduce) resize();
     const menu = game.mode === 'menu';
     const mapId = menu && previewMapId ? previewMapId : game.mapId;
     applyMap(mapId);
@@ -499,9 +493,9 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     pose.rotation.x = rigged ? 0 : !menu && game.dash > 0 ? -0.23 : game.y > 0 ? -0.08 : 0;
     limbs.forEach((limb, i) => { limb.rotation.x = running && game.y === 0 ? Math.sin(phase + (i < 2 ? 0 : Math.PI)) * (i % 2 ? -0.55 : 0.7) : 0; });
     if (rigged) {
-      const clip = menu ? 'idle' : game.mode === 'complete' ? 'win' : game.mode === 'over' ? 'hurt' : game.glide > 0 ? 'glide' : game.dash > 0 ? 'dash' : slide ? 'slide'
+      const clip = menu ? 'idle' : game.mode === 'complete' ? 'win' : game.mode === 'over' || game.hurt > 0 ? 'hurt' : game.glide > 0 ? 'glide' : game.dash > 0 ? 'dash' : slide ? 'slide'
         : game.y > 0 ? game.vy > 0 ? 'jump' : 'fall' : game.landing > 0 ? 'land'
-        : game.invincible > 1.45 ? 'hurt' : 'run';
+        : 'run';
       if (clip !== modelState.active) {
         modelState.actions[modelState.active]?.fadeOut(0.12);
         modelState.actions[clip]?.reset().fadeIn(0.12).play();
@@ -530,8 +524,9 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     shadow.position.x = player.position.x; shadow.position.z = player.position.z;
     shadow.scale.setScalar(menu ? 1.4 : 1 - Math.min(game.y, 2) * 0.18); shadow.material.opacity = 0.22 - Math.min(game.y, 2) * 0.055;
     cleanViews(obstacleViews, game.obstacles); cleanViews(pickupViews, game.pickups);
+    const dangerLanes = warningLanes(game);
     warningMarkers.forEach((marker, index) => {
-      marker.visible = running && game.obstacles.some(ob => ob.type === 'animal' && ob.warned && !ob.passed && !ob.broken && ob.lane === index - 1 && ob.distance > game.distance - 1.7);
+      marker.visible = running && dangerLanes.includes(index - 1);
       marker.material.opacity = 0.65 + Math.sin(clock * 12) * 0.25;
       marker.scale.setScalar(1 + Math.sin(clock * 12) * 0.1);
     });
@@ -571,6 +566,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     wildlifeReady: !!wildlifeReady[activeMapId],
     warningLanes: warningMarkers.map((marker, index) => marker.visible ? index - 1 : null).filter(lane => lane !== null),
     pixelRatio: renderer.getPixelRatio(),
+    renderPixels: canvas.width * canvas.height, qualityReduced: renderQuality.reduced,
     particlesActive: particles.filter(particle => particle.age > 0).length,
     drawCalls: renderer.info.render.calls, textures: renderer.info.memory.textures });
   return { draw, resize, burst, resetEffects, resetViews, setMap, setCharacter, renderer, modelState, getSceneV2State };

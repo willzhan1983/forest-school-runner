@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
+import { LEVELS, Runner, warningLanes } from '../3d/engine.js';
 
 const root = new URL('..', import.meta.url);
 
 async function loadGame() {
-  const source = await readFile(new URL('js/game.js', root), 'utf8');
+  const source = (await Promise.all(['tuning', 'config', 'audio', 'asset-loader', 'game']
+    .map(name => readFile(new URL('js/' + name + '.js', root), 'utf8')))).join('\n');
   const loadedImages = [];
+  const imageObjects = [];
   const canvas = {
     style: {},
     getContext() { return new Proxy({}, { get: () => () => {} }); },
@@ -30,21 +33,89 @@ async function loadGame() {
   };
   const context = {
     window, document, localStorage:window.localStorage,
-    Image:class { set src(value) { loadedImages.push(value); } }, requestAnimationFrame() {},
+    Image:class {
+      constructor() { imageObjects.push(this); }
+      set src(value) { this.path = value; loadedImages.push(value); }
+    }, requestAnimationFrame() {},
     setTimeout() { return 1; }, clearTimeout() {}, Math, Date,
   };
   window.document = document;
+  window.Image = context.Image; window.setTimeout = context.setTimeout;
   vm.runInNewContext(source, context);
-  return { ...window.__fsr, loadedImages };
+  return { ...window.__fsr, loadedImages, imageObjects };
 }
 
 test('2D scene and item art load on the normal homepage without test parameters', async () => {
   const fsr = await loadGame();
-  assert.ok(fsr.loadedImages.includes('assets/backgrounds/forest/v1-test/distant-lake.png'));
+  assert.ok(fsr.loadedImages.includes('assets/backgrounds/forest/v1-test/distant-lake.webp'));
   assert.ok(fsr.loadedImages.includes('assets/items/v2-test/shield.png'));
   assert.ok(fsr.loadedImages.includes('assets/obstacles/classroom/v4-test/supply-crate.png'));
   await Promise.all(fsr.loadedImages.filter(path => path.startsWith('assets/'))
     .map(path => access(new URL(path, root))));
+});
+
+test('WebP scene art falls back to the original PNG on load error', async () => {
+  const fsr = await loadGame();
+  const image = fsr.imageObjects.find(img => img.path === 'assets/backgrounds/forest/v1-test/distant-lake.webp');
+  assert.ok(image);
+  image.onerror();
+  assert.equal(image.path, 'assets/backgrounds/forest/v1-test/distant-lake.png');
+  image.onload();
+  assert.equal(image.onerror, null);
+});
+
+test('2D and 3D share difficulty speeds, hearts and hit protection in seconds', async () => {
+  const fsr = await loadGame();
+  for (const id of fsr.DIFF_ORDER) {
+    assert.equal(fsr.DIFF[id].speedBase / 4.4, LEVELS[id].speedFactor);
+    assert.equal(fsr.DIFF[id].maxLives, LEVELS[id].hearts);
+    const game = new Runner(() => 0.5); game.reset(id);
+    game.obstacles = [{ id:1, type:'log', lane:0, distance:game.distance + 0.05 }];
+    game.pickups = []; game.rows = []; game.nextRow = Infinity;
+    game.advance(0.01);
+    assert.ok(Math.abs(game.invincible - fsr.DIFF[id].invulnHit / 60) < 0.01);
+  }
+});
+
+test('2D queues a near-landing jump, expires early input and keeps the latest action', async () => {
+  const fsr = await loadGame(); fsr.startGame();
+  const p = fsr.getPlayer();
+  p.grounded = false; p.jumps = 1; p.y = 442 - p.h - 0.5; p.vy = 1;
+  fsr.requestJump(); fsr.update(1);
+  assert.ok(p.vy < 0 && !p.grounded, 'queued jump starts on landing');
+  p.y = 442 - p.h - 100; p.vy = 0; p.jumps = 1;
+  fsr.requestJump(); fsr.update(12);
+  p.y = 442 - p.h - 0.5; p.vy = 1; fsr.update(1);
+  assert.equal(p.grounded, true, 'expired input must not jump later');
+  p.grounded = false; p.jumps = 1; p.y = 442 - p.h - 0.5; p.vy = 1;
+  fsr.requestJump(); fsr.doSlide(); fsr.update(1);
+  assert.ok(p.grounded && p.sliding && p.h === 38, 'latest slide replaces queued jump');
+});
+
+test('3D warns about ordinary obstacles before they become close at challenge speed', () => {
+  const game = new Runner(() => 0.5); game.reset('nightmare');
+  game.obstacles = [{ lane:-1, type:'log', distance:game.speed * 1.2 },
+    { lane:1, type:'branch', distance:game.speed * 2 },
+    { lane:0, type:'crate', distance:10, broken:true }];
+  assert.deepEqual(warningLanes(game), [-1]);
+});
+
+test('buffered slide and standing preserve platform feet, including repeated latest slide', async () => {
+  const fsr = await loadGame(); fsr.startGame();
+  const p = fsr.getPlayer();
+  fsr.getPlatforms().push({ x:180, y:300, w:170, h:18 });
+  p.y = 300 - p.h - 0.5; p.vy = 1; p.grounded = false; p.jumps = 1;
+  fsr.doSlide(); fsr.requestJump(); fsr.doSlide(); fsr.update(1);
+  assert.equal(p.y + p.h, 300);
+  assert.equal(p.h, 38);
+  assert.ok(p.sliding && p.onPlatform);
+  p.slideTimer = 0.1; fsr.update(0.2);
+  assert.equal(p.h, 68);
+  assert.equal(p.y + p.h, 300);
+  fsr.doSlide(); fsr.requestJump();
+  assert.equal(p.h, 68, 'jump restores standing collision height');
+  assert.equal(p.y + p.h, 300);
+  assert.ok(p.vy < 0);
 });
 
 test('every 3000 points restores exactly one missing heart and advances the next threshold', async () => {
@@ -181,6 +252,22 @@ test('existing jump, fall, landing, dash and owl glide actions remain distinct',
   assert.equal(fsr.getTestActionState(fsr.CHARACTERS.cat, p), 'dash');
   p.dashing = false; p.gliding = true;
   assert.equal(fsr.getTestActionState(fsr.CHARACTERS.owl, p), 'glide');
+});
+
+test('owl skill starts gliding in midair without an audio exception', async () => {
+  const fsr = await loadGame();
+  fsr.Game.charId = 'owl';
+  fsr.startGame();
+  const owl = fsr.getPlayer();
+  owl.grounded = false;
+  assert.doesNotThrow(() => fsr.doSkill());
+  assert.equal(owl.gliding, true);
+});
+
+test('each 2D theme lasts about twenty seconds at the starting speed', async () => {
+  const fsr = await loadGame();
+  fsr.startGame();
+  assert.equal(fsr.Game.themeAt, fsr.Game.speed * 60 * 20);
 });
 
 test('the completion screen selects the Win action while menu preview remains Idle', async () => {

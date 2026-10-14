@@ -1,16 +1,29 @@
 // World units: x across lanes, y upward, distance forward along the path.
+import '../js/tuning.js?v=audit-20261014';
+const TUNING = globalThis.FSRTuning;
 export const LANE_WIDTH = 2.5;
 export const BOOST_MULTIPLIER = 1.3;
 export const DASH_DURATION = 1.5, DASH_COOLDOWN = 6;
-const ANIMAL_CHARGE_RANGE = 60, ANIMAL_CHARGE_SPEED = 12, ANIMAL_WARNING_SECONDS = 1.2;
-const INPUT_BUFFER_SECONDS = 0.18;
+const ANIMAL_CHARGE_RANGE = 60, ANIMAL_CHARGE_SPEED = 12, ANIMAL_WARNING_SECONDS = TUNING.warningSeconds;
+const INPUT_BUFFER_SECONDS = TUNING.inputBufferSeconds;
+const HURT_SECONDS = 0.35;
 const EXTRA_ITEMS = ['heal-berry', 'golden-seed', 'poison-mushroom', 'sticky-web'];
 export const LEVELS = {
-  easy: { label: '简单', hearts: 5, speedFactor: 1, gapPenalty: 0, minGap: 2.05, double: 0, doubleCap: 0.65 },
-  normal: { label: '普通', hearts: 4, speedFactor: 2, gapPenalty: 0.1, minGap: 2, double: 0.3, doubleCap: 0.75 },
-  hard: { label: '困难', hearts: 3, speedFactor: 3, gapPenalty: 0.2, minGap: 1.95, double: 0.5, doubleCap: 0.85 },
-  nightmare: { label: '挑战', hearts: 2, speedFactor: 5, gapPenalty: 0.3, minGap: 1.9, double: 0.65, doubleCap: 0.92 }
+  easy: { label: '简单', gapPenalty: 0, minGap: 2.05, double: 0, doubleCap: 0.65 },
+  normal: { label: '普通', gapPenalty: 0.1, minGap: 2, double: 0.3, doubleCap: 0.75 },
+  hard: { label: '困难', gapPenalty: 0.2, minGap: 1.95, double: 0.5, doubleCap: 0.85 },
+  nightmare: { label: '挑战', gapPenalty: 0.3, minGap: 1.9, double: 0.65, doubleCap: 0.92 }
 };
+for (const [id, level] of Object.entries(LEVELS)) {
+  level.hearts = TUNING.levels[id].hearts;
+  level.speedFactor = TUNING.levels[id].speed;
+}
+export function warningLanes(game) {
+  return [...new Set(game.obstacles.filter(ob => !ob.passed && !ob.broken &&
+    ob.distance > game.distance - 1.7 && ob.distance - game.distance <=
+    (game.speed + (ob.type === 'animal' ? ANIMAL_CHARGE_SPEED : 0)) * TUNING.warningSeconds + 1.7
+  ).map(ob => ob.lane))];
+}
 export const MAPS = [
   { id: 'china', label: '中国竹林', goal: 20000, speed: 24, reaction: 2.7, double: 0.18 },
   { id: 'japan', label: '日本樱花林', goal: 20000, speed: 26, reaction: 2.55, double: 0.25 },
@@ -61,11 +74,11 @@ export class Runner {
     this.collectible = collectibleFor(this.mapId, this.sceneV2);
     this.mode = 'running'; this.distance = 0; this.speed = this.map.speed * LEVELS[this.level].speedFactor; this.boosting = false; this.time = 0;
     this.lane = 0; this.x = 0; this.y = 0; this.vy = 0;
-    this.slide = 0; this.dash = 0; this.glide = 0; this.cooldown = 0; this.invincible = 0;
+    this.slide = 0; this.dash = 0; this.glide = 0; this.cooldown = 0; this.invincible = 0; this.hurt = 0;
     this.jumpBuffer = 0; this.slideBuffer = 0; this.landing = 0; this.precisionStreak = 0;
     this.hearts = LEVELS[this.level].hearts; this.maxHearts = this.hearts;
     this.shield = 0; this.magnet = 0; this.doubleScore = 0;
-    this.score = 0; this.acorns = 0; this.nextHeal = 3000;
+    this.score = 0; this.acorns = 0; this.nextHeal = TUNING.healEvery;
     this.mission = { segment: 0, ...MISSIONS[0], progress: 0, completed: false };
     this.mission.label = `收集${this.collectible.name}`;
     this.obstacles = []; this.pickups = []; this.events = []; this.rows = [];
@@ -102,7 +115,7 @@ export class Runner {
   addScore(amount, { doubleEligible = false } = {}) {
     this.score += doubleEligible && this.doubleScore > 0 ? amount * 2 : amount;
     while (this.score >= this.nextHeal) {
-      this.nextHeal += 3000;
+      this.nextHeal += TUNING.healEvery;
       if (this.hearts < this.maxHearts) { this.hearts++; this.events.push({ type: 'heal' }); }
     }
   }
@@ -173,7 +186,7 @@ export class Runner {
       if (this.mission.kind === 'collect') this.mission.label = `收集${this.collectible.name}`;
     }
     this.x += Math.sign(this.lane * LANE_WIDTH - this.x) * Math.min(Math.abs(this.lane * LANE_WIDTH - this.x), 17 * dt);
-    for (const key of ['slide', 'dash', 'glide', 'cooldown', 'invincible', 'jumpBuffer', 'slideBuffer', 'landing', 'magnet', 'doubleScore']) this[key] = Math.max(0, this[key] - dt);
+    for (const key of ['slide', 'dash', 'glide', 'cooldown', 'invincible', 'hurt', 'jumpBuffer', 'slideBuffer', 'landing', 'magnet', 'doubleScore']) this[key] = Math.max(0, this[key] - dt);
     if (this.y > 0 || this.vy > 0) {
       this.vy -= (this.glide > 0 ? 5 : 24) * dt;
       if (this.glide > 0) this.vy = Math.max(this.vy, -1.4);
@@ -214,7 +227,8 @@ export class Runner {
           if (row) row.hit = true;
           this.precisionStreak = 0;
           if (this.invincible <= 0) {
-            this.invincible = 1.8; ob.passed = true;
+            this.hurt = HURT_SECONDS;
+            this.invincible = this.shield ? TUNING.levels[this.level].shieldSeconds : TUNING.levels[this.level].hitSeconds; ob.passed = true;
             if (this.shield) { this.shield = 0; this.events.push({ type: 'shield-hit' }); }
             else {
               this.hearts--; this.events.push({ type: 'hurt', cause: ob.type });
@@ -253,7 +267,7 @@ export class Runner {
       else if (this.sceneV2 && coin.kind === 'poison-mushroom') {
         const dashProtected = this.dash > 0, absorbed = !dashProtected && this.shield > 0, immune = dashProtected || !absorbed && this.invincible > 0;
         if (absorbed) this.shield = 0;
-        else if (!immune) { this.hearts--; this.invincible = 1.8; }
+        else if (!immune) { this.hearts--; this.invincible = TUNING.levels[this.level].hitSeconds; this.hurt = HURT_SECONDS; }
         this.events.push({ type: 'poison-mushroom', absorbed, immune, dashProtected, lane: coin.lane, distance: coin.distance, y: coin.y });
         if (this.hearts <= 0) { this.mode = 'over'; this.doubleScore = 0; this.setBoost(false); this.events.push({ type: 'over' }); break; }
       }

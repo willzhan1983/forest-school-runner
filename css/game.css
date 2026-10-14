@@ -22,9 +22,25 @@
     align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;
   }
   #tip.show{display:flex;}
+  #tip strong{display:none;}
+  #tip.portrait{
+    inset:0;flex-direction:column;gap:18px;padding:32px;
+    background:radial-gradient(ellipse at 50% 35%,#315b3e 0%,#13271c 100%);
+  }
+  #tip.portrait strong{display:block;font-size:clamp(26px,7vw,38px);}
+  #tip.portrait span{max-width:320px;font-size:18px;line-height:1.6;}
+  #tip.portrait button{width:min(100%,300px);min-height:56px;font-size:18px;}
+  #tip.landscape{left:8px;right:auto;top:auto;bottom:8px;padding:0;background:transparent;}
+  #tip.landscape strong,#tip.landscape span,#tip.landscape #closeTip{display:none;}
+  #tip.landscape #fsBtn{min-width:52px;min-height:44px;padding:8px 10px;}
   #tip button{
     background:#4caf6d;color:#fff;border:none;border-radius:10px;
     padding:12px 18px;font-size:15px;min-height:44px;cursor:pointer;
     font-family:inherit;
   }
   #tip button.alt{background:rgba(255,255,255,.20);}
+  #assetStatus{
+    position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:96;
+    max-width:90vw;padding:8px 14px;border-radius:10px;background:rgba(20,40,26,.94);
+    color:#eaf6ec;font-size:14px;text-align:center;pointer-events:none;
+  }
