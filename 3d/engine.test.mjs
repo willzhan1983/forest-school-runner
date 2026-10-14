@@ -2,13 +2,25 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LEVELS, MAPS, Runner, seededRandom } from './engine.js';
 
-test('difficulty speeds use 1, 2, 3, 5 multipliers', () => {
-  for (const [level, factor] of Object.entries({ easy: 1, normal: 2, hard: 3, nightmare: 5 })) {
+test('difficulty speeds use 1, 2, 3, 3.5 multipliers', () => {
+  for (const [level, factor] of Object.entries({ easy: 1, normal: 2, hard: 3, nightmare: 3.5 })) {
     assert.equal(LEVELS[level].speedFactor, factor);
     const game = isolated(level);
     assert.equal(game.speed, MAPS[0].speed * factor);
     game.advance(0.01);
     assert.ok(game.speed >= MAPS[0].speed * factor);
+  }
+});
+
+test('hit animation lasts consistently across difficulties without consuming protection time', () => {
+  for (const level of Object.keys(LEVELS)) {
+    const game = isolated(level);
+    game.obstacles = [{ id:1, type:'log', lane:0, distance:0.05 }];
+    game.advance(0.01);
+    assert.ok(game.hurt > 0.3, level);
+    game.advance(0.4);
+    assert.equal(game.hurt, 0, level);
+    assert.ok(game.invincible > 0, level);
   }
 });
 

@@ -24,16 +24,22 @@
   角色配色可在 CHARACTERS.colors 里直接微调。
   ============================================================
 -->
-<link rel="stylesheet" href="css/game.css">
+<link rel="stylesheet" href="css/game.css?v=audit-20261014">
 </head>
 <body>
 <div id="stage"><canvas id="game"></canvas></div>
 <div id="tip">
-  <span>窗口有点窄，横屏或全屏后画面更大更好玩</span>
-  <button id="fsBtn">全屏玩</button>
-  <button id="closeTip" class="alt">知道了</button>
+  <strong>横过手机，冒险更清楚</strong>
+  <span id="tipText">点下方按钮尝试横屏全屏；如果没有自动旋转，请手动横过手机。</span>
+  <button id="fsBtn">横屏全屏玩</button>
+  <button id="closeTip" class="alt">暂时继续</button>
 </div>
 <input type="file" id="picInput" accept="image/*" style="display:none">
-<script src="js/game.js?v=2d-comfort-20261004"></script>
+<div id="assetStatus" role="status" aria-live="polite" hidden>网络不佳，已切换为简版画面</div>
+<script src="js/tuning.js?v=audit-20261014"></script>
+<script src="js/config.js?v=audit-20261014"></script>
+<script src="js/audio.js?v=audit-20261014"></script>
+<script src="js/asset-loader.js?v=audit-20261014"></script>
+<script src="js/game.js?v=audit-20261014"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
-import { Runner, LEVELS, MAPS, LANE_WIDTH, DASH_DURATION, DASH_COOLDOWN, seededRandom, collectibleFor } from './engine.js?v=speed-1235-20261004';
-import { createWorld } from './world.js?v=fuzzy-plush-game-20261004';
+import { Runner, LEVELS, MAPS, LANE_WIDTH, DASH_DURATION, DASH_COOLDOWN, seededRandom, collectibleFor, warningLanes } from './engine.js?v=audit-20261014';
+import { createWorld } from './world.js?v=audit-20261014';
 import { createMapMusic } from './music.js';
 import { reduceGesture } from './gestures.js';
 const $ = s => document.querySelector(s);
@@ -23,18 +23,8 @@ if (testSceneV2) {
   icon.src = './assets/items/v2/double.png';
   icon.addEventListener('error', () => { icon.hidden = true; }, { once: true });
 }
-if (testFuzzyModel) {
-  $('.model-note').textContent = 'Fuzzy 静态模型测试';
-  $('.prototype-label').textContent = 'FOREST SCHOOL LAB · Fuzzy 静态模型测试 · 暂无骨骼动画';
-}
-if (testFuzzyRig) {
-  $('.model-note').textContent = 'Fuzzy 骨骼动作测试';
-  $('.prototype-label').textContent = 'FOREST SCHOOL LAB · Fuzzy 骨骼动作测试版';
-}
-if (testFuzzyV5) {
-  $('.model-note').textContent = 'Fuzzy 毛绒站立版';
-  $('.prototype-label').textContent = 'FOREST SCHOOL LAB · 3D 线上试玩版';
-}
+$('.model-note').textContent = 'Fuzzy 毛绒站立版';
+$('.prototype-label').textContent = 'FOREST SCHOOL LAB · 3D 线上试玩版';
 let selectedLevel = 'easy', selectedMap = 0, unlockedMap = 0, modeShown = '', lastTime = 0, clock = 0, toastTime = 0;
 let best = 0, soundOn = true, audio = null;
 const music = createMapMusic();
@@ -53,6 +43,10 @@ function syncMapOptions() {
   world.setMap(MAPS[selectedMap].id);
 }
 syncMapOptions();
+document.querySelectorAll('[data-level]').forEach(button => {
+  const level = LEVELS[button.dataset.level];
+  button.querySelector('small').textContent = `${level.hearts}心 · ${level.speedFactor.toFixed(2)}×`;
+});
 if (testDoodle) $('#character-options').hidden = false;
 function selectCharacter(character) {
   game.setCharacter(character);
@@ -65,8 +59,8 @@ function selectCharacter(character) {
   $('#character-name').textContent = game.character === 'doodle' ? '涂涂 Doodle' : '钱钱 Fuzzy';
   $('#menu-lead').innerHTML = testSceneV2 ? sceneLead : game.character === 'doodle' ? '和涂涂一起，跑进立体的森林。<br>跳过倒木，展翅滑翔，收集一路的小惊喜。' : '和钱钱一起，跑进立体的森林。<br>跳过倒木，穿过树影，收集一路的小惊喜。';
   $('#skill-control-hint').textContent = game.character === 'doodle' ? '滑翔' : '冲刺';
-  $('.model-note').textContent = game.character === 'doodle' ? 'Doodle 绿色羽尾版' : testFuzzyV5 ? 'Fuzzy 毛绒站立版' : testFuzzyRig ? 'Fuzzy 骨骼动作测试' : '临时模型';
-  $('.prototype-label').textContent = game.character === 'doodle' || testFuzzyV5 ? 'FOREST SCHOOL LAB · 3D 线上试玩版' : testFuzzyRig ? 'FOREST SCHOOL LAB · Fuzzy 骨骼动作测试版' : 'FOREST SCHOOL LAB · 3D 原型';
+  $('.model-note').textContent = game.character === 'doodle' ? 'Doodle 绿色羽尾版' : 'Fuzzy 毛绒站立版';
+  $('.prototype-label').textContent = 'FOREST SCHOOL LAB · 3D 线上试玩版';
   syncMapOptions(); syncUI();
 }
 if (testDoodle) document.querySelectorAll('[data-character]').forEach(button => button.addEventListener('click', () => selectCharacter(button.dataset.character)));
@@ -135,9 +129,9 @@ function syncUI() {
   $('#mission-fill').style.width = `${game.mission.progress / game.mission.target * 100}%`;
   $('#mission').classList.toggle('done', game.mission.completed);
   $('#mission-alert').textContent = game.mission.completed ? '✓' : '!';
-  const dangerLanes = [...new Set(game.obstacles.filter(ob => ob.type === 'animal' && ob.warned && !ob.passed && !ob.broken && ob.distance > game.distance - 1.7).map(ob => ob.lane))];
+  const dangerLanes = warningLanes(game);
   $('#animal-warning').hidden = !dangerLanes.length || game.mode !== 'running';
-  $('#animal-warning').textContent = dangerLanes.length ? `⚠ ${dangerLanes.map(lane => ['左跑道', '中跑道', '右跑道'][lane + 1]).join('、')} · 小动物！换道或跳跃` : '';
+  $('#animal-warning').textContent = dangerLanes.length ? `⚠ ${dangerLanes.map(lane => ['左跑道', '中跑道', '右跑道'][lane + 1]).join('、')} · 前方障碍，准备躲避` : '';
   const doodle = game.character === 'doodle';
   const activeSkill = doodle ? game.glide : game.dash;
   const dashState = activeSkill > 0 ? 'active' : game.cooldown > 0 ? 'cooling' : 'ready';
@@ -156,7 +150,7 @@ function syncUI() {
     $('#start-btn span').textContent = loading ? `${doodle ? '涂涂' : '钱钱'}正在准备…` : world.modelState.status === 'fallback' ? doodle ? '涂涂模型加载失败' : '使用备用角色开始' : '开始森林冒险';
     if (loading) $('.model-note').textContent = '角色载入中';
     else if (world.modelState.status === 'fallback') $('.model-note').textContent = '角色载入失败 · 备用造型';
-    else if (world.modelState.status === 'ready') $('.model-note').textContent = doodle ? 'Doodle 绿色羽尾版' : testFuzzyV5 ? 'Fuzzy 毛绒站立版' : '角色准备好了';
+    else if (world.modelState.status === 'ready') $('.model-note').textContent = doodle ? 'Doodle 绿色羽尾版' : 'Fuzzy 毛绒站立版';
   }
   $('#toast').classList.toggle('visible', toastTime > 0);
   if (modeShown === game.mode) return;
