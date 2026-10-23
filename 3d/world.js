@@ -30,12 +30,18 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   renderer.setClearColor(0xc4dfcf);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.28;
+  renderer.toneMappingExposure = 1.08;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xc4dfcf);
   scene.fog = new THREE.Fog(0xc4dfcf, 38, 155);
   const camera = new THREE.PerspectiveCamera(57, 1, 0.1, 230);
-  scene.add(new THREE.HemisphereLight(0xf5fff2, 0x487257, 2.6));
-  const sun = new THREE.DirectionalLight(0xffebc4, 3.2); sun.position.set(-30, 50, 25); scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xe5f2ff, 0x65714a, 1.9));
+  const sun = new THREE.DirectionalLight(0xffe2ae, 2.6); sun.position.set(-12, 24, 8); scene.add(sun);
+  sun.target.position.set(0, 0, -12); scene.add(sun.target);
+  sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 24, bottom: -18, near: 1, far: 80 });
+  sun.shadow.normalBias = 0.035; sun.shadow.bias = -0.0002;
   const materials = new Map();
   const mat = (color, extra = '') => {
     const key = `${color}:${extra}`;
@@ -55,7 +61,13 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   const ground = box(0x729663, 0, -0.22, -70, 250, 0.4, 300);
   box(0xb8ad7f, 0, -0.025, -70, 8.3, 0.12, 300);
   const path = box(0xccbe91, 0, 0.04, -70, 7.8, 0.035, 300);
-  for (const x of [-1.25, 1.25]) box(0xe5d9b2, x, 0.064, -70, 0.045, 0.012, 300);
+  ground.receiveShadow = true; path.receiveShadow = true;
+  // Low-contrast soil and irregular shoulders keep the route readable without a tiled-road look.
+  const soil = new THREE.InstancedMesh(ballGeo, mat(0xb9a477, 'soil'), 64); scene.add(soil);
+  const slopes = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), mat(0x729663, 'slopes'), 32); scene.add(slopes);
+  slopes.material.flatShading = false;
+  soil.receiveShadow = true; slopes.receiveShadow = true;
+  soil.frustumCulled = false; slopes.frustumCulled = false;
   // Lane boundaries are physical gravel in the 3D world, not a flat background.
   const gravel = new THREE.InstancedMesh(ballGeo, mat(0xd8d4b0), 160); scene.add(gravel);
   const bank = new THREE.InstancedMesh(ballGeo, mat(0x91ab65), 100); scene.add(bank);
@@ -168,6 +180,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
       model.rotation.y = Math.PI;
       model.position.set(-(bounds.min.x + size.x / 2) * scale, -bounds.min.y * scale, -(bounds.min.z + size.z / 2) * scale);
       pose.add(model);
+      model.traverse(child => { if (child.isMesh) child.castShadow = true; });
       loadedModel = model;
       procedural.visible = false;
       if (gltf.animations.length) {
@@ -365,7 +378,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     for (const old of [trunks, leavesA, leavesB]) old.visible = !ready;
     plantLayers.forEach((layer, index) => {
       layer.visible = ready;
-      const useFog = mapId === 'china' || mapId === 'japan';
+      const useFog = true;
       if (layer.material.fog !== useFog) { layer.material.fog = useFog; layer.material.needsUpdate = true; }
       if (ready && layer.material.map !== textures[index]) { layer.material.map = textures[index]; layer.material.needsUpdate = true; }
     });
@@ -407,9 +420,12 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     const look = MAP_LOOKS[mapId] || MAP_LOOKS.china;
     applyBackground(mapId);
     scene.fog.color.setHex(look.sky);
-    scene.fog.near = mapId === 'europe' || mapId === 'amazon' ? 75 : 38;
-    scene.fog.far = mapId === 'europe' || mapId === 'amazon' ? 190 : 155;
+    scene.fog.near = 32;
+    scene.fog.far = 150;
     ground.material.color.setHex(look.ground); path.material.color.setHex(look.path);
+    path.material.color.lerp(new THREE.Color(0xc89e64), 0.35);
+    soil.material.color.copy(path.material.color).multiplyScalar(0.92);
+    slopes.material.color.setHex(look.ground).multiplyScalar(0.9);
     for (const [object, color] of [[trunks, look.trunk], [leavesA, look.crown], [leavesB, look.cone], [bank, look.bank], [petals, look.petals]]) object.material.color.setHex(color);
     applyScenePlants(mapId);
   }
@@ -434,6 +450,14 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     bank.visible = !mountainRocks;
     rockBank.forEach(layer => { layer.visible = mountainRocks; });
     const dist = menu ? clock * 1.1 : game.distance;
+    for (let i = 0; i < 32; i++) {
+      const side = i % 2 ? 1 : -1, size = 5 + noise(i + 101) * 9;
+      put(slopes, i, side * (24 + noise(i + 71) * 22), -2, -wrap(Math.floor(i / 2) * 20 - dist, 320), size, 5 + noise(i + 89) * 13, 12 + noise(i) * 9, i);
+    }
+    for (let i = 0; i < 64; i++) {
+      put(soil, i, (noise(i + 43) - 0.5) * 7, 0.059, -wrap(i * 3.17 - dist), 0.25 + noise(i) * 0.65, 0.004, 0.5 + noise(i + 7) * 1.1, i);
+    }
+    slopes.instanceMatrix.needsUpdate = true; soil.instanceMatrix.needsUpdate = true;
     const rockCounts = [0, 0];
     for (let i = 0; i < 100; i++) {
       const side = i % 2 ? 1 : -1, z = -wrap(Math.floor(i / 2) * 4.1 - dist);
@@ -458,7 +482,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
       put(bank, i, side * (4.6 + noise(i + 8)), 0.1, z, 0.8, 0.45 + noise(i) * 0.5, 1.1);
       if (mountainRocks) {
         const variation = Math.floor(i / 2) % 2, scale = 0.8 + noise(i + 9) * 0.45;
-        put(rockBank[variation], rockCounts[variation]++, side * (5.1 + noise(i + 8) * 0.7), scale * 0.48, z, scale * 1.75, scale * 1.15, 1);
+        put(rockBank[variation], rockCounts[variation]++, side * (5.4 + noise(i + 8) * 3.6), scale * 0.48, z + noise(i + 2) * 2, scale * 1.75, scale * 1.15, 1);
       }
     }
     if (mountainRocks) rockBank.forEach(layer => { layer.instanceMatrix.needsUpdate = true; });
@@ -472,8 +496,8 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
       layer.instanceMatrix.needsUpdate = true;
     }
     for (let i = 0; i < 160; i++) {
-      const side = i % 4, x = [-4, -1.25, 1.25, 4][side];
-      put(gravel, i, x + (noise(i) - 0.5) * 0.04, 0.075, -wrap(Math.floor(i / 4) * 5 - dist), 0.06, 0.04, side === 0 || side === 3 ? 0.48 : 0.23);
+      const x = (i % 2 ? 1 : -1) * (3.9 + noise(i) * 0.55);
+      put(gravel, i, x, 0.075, -wrap(Math.floor(i / 2) * 2.5 + noise(i + 8) - dist), 0.06, 0.04, 0.12 + noise(i + 3) * 0.2);
     }
     for (let i = 0; i < 110; i++) {
       const x = (i % 2 ? 1 : -1) * (4.65 + noise(i) * 1.7);
@@ -522,7 +546,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     magnetBeads.forEach((bead, i) => { const angle = clock * 5 + i * Math.PI * 2 / 3; bead.visible = magnetRing.visible; bead.position.set(Math.cos(angle) * 1.08, 1.1 + Math.sin(clock * 6 + i) * 0.2, Math.sin(angle) * 0.72); });
     pose.visible = menu || game.invincible <= 0 || Math.floor(clock * 14) % 2 === 0;
     shadow.position.x = player.position.x; shadow.position.z = player.position.z;
-    shadow.scale.setScalar(menu ? 1.4 : 1 - Math.min(game.y, 2) * 0.18); shadow.material.opacity = 0.22 - Math.min(game.y, 2) * 0.055;
+    shadow.scale.setScalar(menu ? 1.4 : 1 - Math.min(game.y, 2) * 0.18); shadow.material.opacity = 0.1 - Math.min(game.y, 2) * 0.025;
     cleanViews(obstacleViews, game.obstacles); cleanViews(pickupViews, game.pickups);
     const dangerLanes = warningLanes(game);
     warningMarkers.forEach((marker, index) => {
@@ -552,7 +576,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     }
     for (const p of particles) if (p.age > 0) { p.age -= dt; p.mesh.position.x += p.vx * dt; p.mesh.position.y += p.vy * dt; p.mesh.position.z += (p.vz + game.speed) * dt; p.vy -= 9 * dt; p.mesh.visible = p.age > 0 && !menu; }
     if (menu) { cameraTarget.set(portrait ? 0 : 7.8, portrait ? 7.5 : 6.2, portrait ? 12 : 11); lookTarget.set(portrait ? 0 : -4, 0.8, portrait ? -5 : -10); }
-    else { cameraTarget.set(game.x * 0.12, portrait ? 6.3 : 5, portrait ? 11.5 : 10.5); lookTarget.set(game.x * 0.08, 0.6, portrait ? -13 : -16); }
+    else { cameraTarget.set(game.x * 0.08, portrait ? 6.3 : 3.8, portrait ? 11.5 : 9.8); lookTarget.set(game.x * 0.04, portrait ? 0.6 : 1.3, portrait ? -13 : -20); }
     camera.position.lerp(cameraTarget, cameraReady ? 1 - Math.exp(-dt * 5) : 1); camera.lookAt(lookTarget); cameraReady = true;
     renderer.render(scene, camera);
   }

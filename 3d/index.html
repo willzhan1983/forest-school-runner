@@ -9,7 +9,7 @@
     previewUrl.searchParams.delete('testMap');
     if (previewUrl.href !== location.href) history.replaceState(null, '', previewUrl.href);
   </script>
-  <link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css?v=release-20261004">
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css?v=trail-20261023">
 </head>
 <body>
   <main id="app">
@@ -49,7 +49,7 @@
   </main>
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
   <script type="module">
-    import('./main.js?v=audit-20261014').catch(error => {
+    import('./main.js?v=trail-20261023').catch(error => {
       console.error(error);
       document.querySelector('#failure').hidden = false;
       document.querySelector('#failure-copy').textContent = '3D 加载失败。可刷新重试，或先玩原来的 2D 版本。';
