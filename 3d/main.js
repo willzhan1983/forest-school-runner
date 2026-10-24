@@ -1,5 +1,5 @@
 import { Runner, LEVELS, MAPS, LANE_WIDTH, DASH_DURATION, DASH_COOLDOWN, seededRandom, collectibleFor, warningLanes } from './engine.js?v=audit-20261014';
-import { createWorld } from './world.js?v=trail-20261023';
+import { createWorld } from './world.js?v=wind-20261024';
 import { createMapMusic } from './music.js';
 import { reduceGesture } from './gestures.js';
 const $ = s => document.querySelector(s);
