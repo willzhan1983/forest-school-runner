@@ -26,6 +26,8 @@ const WILDLIFE = { china: 'china-squirrel', japan: 'japan-white-eye', europe: 'e
 const sceneVersion = mapId => mapId === 'europe' || mapId === 'amazon' ? 'v3' : 'v2';
 
 export function createWorld(canvas, { sceneV2 = false } = {}) {
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const windTime = { value: 0 };
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setClearColor(0xc4dfcf);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -86,6 +88,16 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
   const petals = new THREE.InstancedMesh(ballGeo, mat(0xf6d595), 110); scene.add(petals);
   const plantLayers = sceneV2 ? [0, 1].map(() => {
     const layer = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.08, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }), 20);
+    // Bend only the upper foliage: roots stay planted and each tree has its own phase.
+    layer.material.onBeforeCompile = shader => {
+      shader.uniforms.forestWindTime = windTime;
+      shader.vertexShader = 'uniform float forestWindTime;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        float phase = instanceMatrix[3].x * 0.7 + instanceMatrix[3].y * 1.3;
+        transformed.x += pow(uv.y, 2.0) * 0.018 * sin(forestWindTime * 0.85 + phase) * min(forestWindTime, 1.0);
+      `);
+    };
     layer.frustumCulled = false; layer.visible = false; scene.add(layer); return layer;
   }) : [];
   for (const object of [gravel, bank, trunks, leavesA, leavesB, petals]) object.frustumCulled = false;
@@ -404,6 +416,8 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
       requestedPhotos.add(key);
       backgroundLoader.load(`./assets/backgrounds/${mapId}-${shape}-v1.jpg`, texture => {
         texture.colorSpace = THREE.SRGBColorSpace;
+        // Reserve a small margin for gentle parallax without exposing image edges.
+        texture.repeat.set(0.98, 0.98); texture.offset.set(0.01, 0.01);
         photos.set(key, texture);
         if (activeMapId === mapId && (portrait ? 'portrait' : 'landscape') === shape) { scene.background = texture; distantHills.visible = false; }
       }, undefined, () => {});
@@ -450,9 +464,14 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     bank.visible = !mountainRocks;
     rockBank.forEach(layer => { layer.visible = mountainRocks; });
     const dist = menu ? clock * 1.1 : game.distance;
+    windTime.value = reducedMotion.matches ? 0 : clock;
+    if (scene.background?.isTexture) {
+      const targetX = 0.01 - (reducedMotion.matches || menu ? 0 : game.x * 0.0015);
+      scene.background.offset.x += (targetX - scene.background.offset.x) * (1 - Math.exp(-Math.max(0, dt) * 2));
+    }
     for (let i = 0; i < 32; i++) {
       const side = i % 2 ? 1 : -1, size = 5 + noise(i + 101) * 9;
-      put(slopes, i, side * (24 + noise(i + 71) * 22), -2, -wrap(Math.floor(i / 2) * 20 - dist, 320), size, 5 + noise(i + 89) * 13, 12 + noise(i) * 9, i);
+      put(slopes, i, side * (24 + noise(i + 71) * 22), -2, -wrap(Math.floor(i / 2) * 20 - dist * 0.35, 320), size, 5 + noise(i + 89) * 13, 12 + noise(i) * 9, i);
     }
     for (let i = 0; i < 64; i++) {
       put(soil, i, (noise(i + 43) - 0.5) * 7, 0.059, -wrap(i * 3.17 - dist), 0.25 + noise(i) * 0.65, 0.004, 0.5 + noise(i + 7) * 1.1, i);
@@ -489,9 +508,12 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     if (plantLayers[0]?.visible) for (const [layerIndex, layer] of plantLayers.entries()) {
       for (let i = 0; i < 20; i++) {
         const side = i % 2 ? 1 : -1, z = -wrap(Math.floor(i / 2) * 18 + layerIndex * 8 - dist);
-        const x = side * (9.5 + noise(i + layerIndex * 20) * 5), scale = 0.85 + noise(i + 4) * 0.5;
+        // Two physical depth bands create natural perspective motion, not extra game speed.
+        const x = side * (layerIndex ? 15 + noise(i + 20) * 8 : 8.5 + noise(i) * 3), scale = 0.85 + noise(i + 4) * 0.5;
         const height = mapId === 'china' ? (layerIndex ? 8 : 10) : mapId === 'amazon' ? (layerIndex ? 7 : 11) : (layerIndex ? 6 : 8);
-        put(layer, i, x, height * scale / 2, z, height * scale * (mapId === 'china' ? 0.72 : mapId === 'amazon' ? 1.2 : 1.05), height * scale, 1);
+        const width = height * scale * (mapId === 'china' ? 0.72 : mapId === 'amazon' ? 1.2 : 1.05);
+        const clearX = side * Math.max(Math.abs(x), 4.8 + width * 0.52);
+        put(layer, i, clearX, height * scale / 2, z, width, height * scale, 1);
       }
       layer.instanceMatrix.needsUpdate = true;
     }
@@ -501,7 +523,8 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     }
     for (let i = 0; i < 110; i++) {
       const x = (i % 2 ? 1 : -1) * (4.65 + noise(i) * 1.7);
-      put(petals, i, x, 0.32, -wrap(i * 1.85 - dist), 0.12, 0.15, 0.12);
+      const sway = Math.sin(windTime.value * 1.1 + i * 1.7) * 0.045 * Math.min(windTime.value, 1);
+      put(petals, i, x + sway, 0.32, -wrap(i * 1.85 - dist), 0.12, 0.15, 0.12);
     }
     for (const batch of [trunks, leavesA, leavesB, bank, gravel, petals]) batch.instanceMatrix.needsUpdate = true;
     gate.position.z = menu ? -100 : -(game.map.goal - dist);
@@ -581,6 +604,7 @@ export function createWorld(canvas, { sceneV2 = false } = {}) {
     renderer.render(scene, camera);
   }
   const getSceneV2State = () => ({ enabled: sceneV2, mapId: activeMapId, backgroundPhoto: !!scene.background?.isTexture, plantsReady: plantLayers[0]?.visible || false, oldTreesVisible: trunks.visible,
+    windTime: windTime.value, backgroundOffsetX: scene.background?.isTexture ? scene.background.offset.x : null,
     rocksReady: rockBank.length > 0 && rockBank.every(layer => layer.visible), oldBankVisible: bank.visible,
     obstacleThemes: [...obstacleViews.values()].map(view => view.userData.theme).filter(Boolean).sort(),
     obstacleVisuals: [...new Set([...obstacleViews.values()].map(view => view.userData.visualKind).filter(Boolean))].sort(),
