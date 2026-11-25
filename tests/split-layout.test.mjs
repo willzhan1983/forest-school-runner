@@ -12,7 +12,7 @@ test('loads external CSS and JavaScript without inline game blocks', async () =>
   const html = await readProjectFile('index.html');
 
   assert.match(html, /href="css\/game\.css\?v=audit-20261014"/);
-  assert.match(html, /src="js\/game\.js\?v=glide-20261014"/);
+  assert.match(html, /src="js\/game\.js\?v=theme-rings-20261125"/);
   for (const name of ['tuning', 'config', 'audio', 'asset-loader']) {
     assert.ok(html.indexOf('src="js/' + name + '.js') < html.indexOf('src="js/game.js'));
   }
@@ -27,7 +27,7 @@ test('keeps the baseline runner compatibility anchors', async () => {
     assert.match(gameJs, new RegExp(key));
   }
 
-  for (const marker of ['function doSlide', 'function doSkill', 'dashing', 'gliding', 'var DIFF']) {
+  for (const marker of ['function pressJump', 'function doSkill', 'dashing', 'gliding', 'var DIFF']) {
     assert.match(gameJs, new RegExp(marker));
   }
 });

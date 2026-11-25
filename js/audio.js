@@ -1,6 +1,12 @@
 (function(global){
 'use strict';
-global.createFSRAudio = function(dayPhase){
+global.createFSRAudio = function(dayPhase, sceneIndex){
+var phrases = [
+  [0,2,4,2,1,0,3,2], [2,1,0,2,3,2,1,0], [0,3,2,4,3,1,2,0],
+  [4,2,1,0,1,3,2,0], [0,1,3,1,4,2,1,0], [3,4,2,1,0,2,1,0],
+  [1,0,2,3,1,2,0,0], [0,2,3,4,2,3,1,0], [4,3,1,2,4,2,1,0], [2,4,3,1,0,1,2,0]
+];
+var pitches = [293.66,329.63,392,440,523.25];
 var Audio2 = {
   ctx:null, enabled:true,
   init:function(){
@@ -117,15 +123,16 @@ var Audio2 = {
       var vol = 1 - nAmt * 0.45;         /* 夜晚整体更轻 */
 
       /* 主旋律：夜里降八度 */
-      var f = this.MUSIC_MEL[i % 32] * (nAmt > 0.5 ? 0.5 : 1);
-      this._musicNote(f, t, m.beat * 0.92, 0.050 * vol, 'triangle');
+      var scene = sceneIndex ? sceneIndex() : 0;
+      var f = pitches[phrases[scene][i % 8]] * (nAmt > 0.5 ? 0.5 : 1);
+      if(i % 8 !== 7) this._musicNote(f, t, m.beat * 1.15, 0.045 * vol, scene % 2 ? 'triangle' : 'sine');
 
       /* 贝斯：每 2 步一个根音 */
       if(i % 2 === 0){
         this._musicNote(this.MUSIC_BASS[(i / 2) % 16], t, m.beat * 1.7, 0.080 * vol, 'sine');
       }
       /* 轻打击：正拍稍重、弱拍很轻 */
-      this._musicHat(t, (i % 2 === 0 ? 0.030 : 0.014) * vol * (1 - nAmt * 0.45));
+      if(i % 4 === 2) this._musicHat(t, 0.012 * vol * (1 - nAmt * 0.45));
 
       m.next++;
     }

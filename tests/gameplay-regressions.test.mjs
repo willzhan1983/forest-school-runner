@@ -11,10 +11,13 @@ async function loadGame() {
     .map(name => readFile(new URL('js/' + name + '.js', root), 'utf8')))).join('\n');
   const loadedImages = [];
   const imageObjects = [];
+  const listeners = {};
   const canvas = {
     style: {},
     getContext() { return new Proxy({}, { get: () => () => {} }); },
-    addEventListener() {},
+    addEventListener(name, fn) { (listeners[name] ??= []).push(fn); },
+    getBoundingClientRect() { return {left:0, top:0, width:960, height:540}; },
+    setPointerCapture() {},
   };
   const element = () => ({ style:{}, classList:{ add() {}, remove() {} }, addEventListener() {} });
   const elements = new Map([
@@ -42,8 +45,22 @@ async function loadGame() {
   window.document = document;
   window.Image = context.Image; window.setTimeout = context.setTimeout;
   vm.runInNewContext(source, context);
-  return { ...window.__fsr, loadedImages, imageObjects };
+  return { ...window.__fsr, loadedImages, imageObjects, listeners };
 }
+
+test('holding touch reaches higher and downward swiping keeps standing height', async () => {
+  async function apex(hold){
+    const game = await loadGame(); game.startGame();
+    const send = (name,y) => game.listeners[name].forEach(fn=>fn({pointerType:'touch', clientX:400,clientY:y,preventDefault(){}}));
+    send('pointerdown',180); send('pointermove',240);
+    if(!hold) send('pointerup',240);
+    const p = game.getPlayer(); let top = p.y;
+    for(let i=0;i<42;i++){game.update(1); top=Math.min(top,p.y);}
+    assert.equal(p.h,68);
+    return top;
+  }
+  assert.ok(await apex(true) < await apex(false)-55);
+});
 
 test('2D scene and item art load on the normal homepage without test parameters', async () => {
   const fsr = await loadGame();
@@ -87,9 +104,7 @@ test('2D queues a near-landing jump, expires early input and keeps the latest ac
   fsr.requestJump(); fsr.update(12);
   p.y = 442 - p.h - 0.5; p.vy = 1; fsr.update(1);
   assert.equal(p.grounded, true, 'expired input must not jump later');
-  p.grounded = false; p.jumps = 1; p.y = 442 - p.h - 0.5; p.vy = 1;
-  fsr.requestJump(); fsr.doSlide(); fsr.update(1);
-  assert.ok(p.grounded && p.sliding && p.h === 38, 'latest slide replaces queued jump');
+
 });
 
 test('3D warns about ordinary obstacles before they become close at challenge speed', () => {
@@ -98,24 +113,6 @@ test('3D warns about ordinary obstacles before they become close at challenge sp
     { lane:1, type:'branch', distance:game.speed * 2 },
     { lane:0, type:'crate', distance:10, broken:true }];
   assert.deepEqual(warningLanes(game), [-1]);
-});
-
-test('buffered slide and standing preserve platform feet, including repeated latest slide', async () => {
-  const fsr = await loadGame(); fsr.startGame();
-  const p = fsr.getPlayer();
-  fsr.getPlatforms().push({ x:180, y:300, w:170, h:18 });
-  p.y = 300 - p.h - 0.5; p.vy = 1; p.grounded = false; p.jumps = 1;
-  fsr.doSlide(); fsr.requestJump(); fsr.doSlide(); fsr.update(1);
-  assert.equal(p.y + p.h, 300);
-  assert.equal(p.h, 38);
-  assert.ok(p.sliding && p.onPlatform);
-  p.slideTimer = 0.1; fsr.update(0.2);
-  assert.equal(p.h, 68);
-  assert.equal(p.y + p.h, 300);
-  fsr.doSlide(); fsr.requestJump();
-  assert.equal(p.h, 68, 'jump restores standing collision height');
-  assert.equal(p.y + p.h, 300);
-  assert.ok(p.vy < 0);
 });
 
 test('every 3000 points restores exactly one missing heart and advances the next threshold', async () => {
@@ -282,6 +279,27 @@ test('each 2D theme lasts about twenty seconds at the starting speed', async () 
   assert.equal(fsr.Game.themeAt, fsr.Game.speed * 60 * 20);
 });
 
+test('endless route loads all ten scenes and loops into lap two', async () => {
+  const game = await loadGame(); game.startGame();
+  const state = game.Game;
+  const route = ['forest','classroom','treehouse','bamboo','amazon','huangshan','yakushima','sequoia','banff','fiordland'];
+  for (const index of [1,2,3,4,5,6,7,8,9,0]) {
+    const distance = state.distance;
+    state.themeAt = distance - 1; state.themeBlend = 0.999;
+    state.nextObstacleAt = 0;
+    game.update(1);
+    assert.equal(state.themeIndex, index);
+    assert.ok(state.distance > distance);
+    assert.equal(game.getObstacles().at(-1).themeId, route[index]);
+    if(index >= 5) assert.ok(game.loadedImages.includes('assets/backgrounds/' + route[index] + '-v1.jpg'));
+  }
+  assert.equal(state.lap, 2);
+  const paths = game.loadedImages.filter(path => path.startsWith('3d/assets/'));
+  assert.equal(paths.length, 6);
+  await Promise.all(paths.map(path => access(new URL(path, root))));
+  game.startGame(); assert.equal(state.lap, 1);
+});
+
 test('the completion screen selects the Win action while menu preview remains Idle', async () => {
   const fsr = await loadGame();
   const p = { preview:false, hurtTimer:0, dashing:false, gliding:false, sliding:false, grounded:true, landTimer:0, vy:0 };
@@ -301,4 +319,30 @@ test('test scene loading starts with the current forest scene and preloads later
   assert.match(source, /function preloadNextTestSceneAssets\(\)/);
   assert.match(source, /player = createPlayer\(Game\.charId\);[\s\S]*preloadNextTestSceneAssets\(\);/);
   assert.match(source, /Game\.themeIndex = \(Game\.themeIndex \+ 1\) % THEMES\.length;[\s\S]*preloadNextTestSceneAssets\(\);/);
+});
+
+test('double tapping catches a distant ring, traverses a long arc and allows early release', async () => {
+  for (const id of ['owl', 'cat']) {
+    const game = await loadGame(); game.Game.charId = id; game.startGame();
+    const p = game.getPlayer();
+    game.getPlatforms().length = 0;
+    const branch = {x:p.x+p.w/2+200, y:240, h:18, w:100};
+    game.getPlatforms().push(branch);
+    const tap = () => {
+      for(const name of ['pointerdown','pointerup']) for(const fn of game.listeners[name])
+        fn({pointerType:'touch',clientX:400,clientY:180,preventDefault(){}});
+    };
+    tap(); tap();
+    assert.equal(p.swing, branch);
+    game.update(0); game.update(1);
+    assert.ok(Number.isFinite(p.y) && p.swing);
+    if (id === 'owl') game.requestJump();
+    else {
+      const start = branch.x;
+      for (let i = 0; i < 200 && p.swing; i++) game.update(1);
+      assert.ok(start-branch.x >= 390);
+    }
+    assert.ok(!p.swing && p.vy < 0);
+    assert.equal(branch.swingUsed, true);
+  }
 });
