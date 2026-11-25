@@ -53,11 +53,20 @@ const USE_EXTRACTED_TEST_SPRITES = typeof URLSearchParams !== 'undefined' &&
 /* 已确认的场景与道具默认启用；图片加载失败时仍使用原 Canvas 画面。 */
 const USE_TEST_SCENE_ASSETS = true;
 const TEST_SCENE_ASSETS = {
+  huangshan:{}, yakushima:{}, sequoia:{}, banff:{}, fiordland:{},
+  bamboo:{}, amazon:{},
   forest:{ distant:null, middle:null, foreground:null, canopy:null, log:null },
   classroom:{ distant:null, middle:null, foreground:null },
   treehouse:{ distant:null, middle:null, foreground:null }
 };
 const TEST_SCENE_FILES = {
+  huangshan:{ distant:'assets/backgrounds/huangshan-v1.jpg' },
+  yakushima:{ distant:'assets/backgrounds/yakushima-v1.jpg' },
+  sequoia:{ distant:'assets/backgrounds/sequoia-v1.jpg' },
+  banff:{ distant:'assets/backgrounds/banff-v1.jpg' },
+  fiordland:{ distant:'assets/backgrounds/fiordland-v1.jpg' },
+  bamboo:{ distant:'3d/assets/backgrounds/china-landscape-v1.jpg', stump:'3d/assets/obstacles/v2/bamboo-stumps.png', forestLog:'3d/assets/obstacles/v2/fallen-bamboo.png' },
+  amazon:{ distant:'3d/assets/backgrounds/amazon-landscape-v1.jpg', stump:'3d/assets/obstacles/v3/amazon-roots.png', forestLog:'3d/assets/obstacles/v3/amazon-fallen-log.png' },
   forest:{ distant:'assets/backgrounds/forest/v1-test/distant-lake.webp', middle:'assets/backgrounds/forest/v1-test/middle-treeline.webp', foreground:'assets/backgrounds/forest/v1-test/foreground-bushes.webp', canopy:'assets/backgrounds/forest/v1-test/canopy-frame.webp', log:'assets/obstacles/forest/v1-test/fallen-log.png' },
   classroom:{ distant:'assets/backgrounds/classroom/v1-test/distant-classroom.webp', middle:'assets/backgrounds/classroom/v1-test/middle-schoolyard.webp', foreground:'assets/backgrounds/classroom/v1-test/foreground-stationery.webp' },
   treehouse:{ distant:'assets/backgrounds/treehouse/v1-test/distant-treehouses.webp', middle:'assets/backgrounds/treehouse/v1-test/middle-lanterns.webp', foreground:'assets/backgrounds/treehouse/v1-test/foreground-moss.webp' }
@@ -71,6 +80,9 @@ const TEST_OBJECT_ASSETS = {
   forestBranch:null, classroomCrate:null, treehouseStump:null
 };
 const TEST_OBJECT_FILES = {
+  worldProps:'assets/items/world-props-v1.png',
+  biomeIcons:'assets/items/biome-icons-v1.png',
+  biomeObstacles:'assets/obstacles/biome-obstacles-v1.png',
   forestThorn:'assets/obstacles/forest/v2-test/thorn-bramble.png',
   classroomDesk:'assets/obstacles/classroom/v2-test/desk-books.png',
   treehouseCrate:'assets/obstacles/treehouse/v2-test/moss-crate.png',
@@ -92,7 +104,11 @@ const TEST_OBJECT_FILES = {
   treehouseStump:'assets/obstacles/treehouse/v4-test/vine-stump.png'
 };
 
+var swingRingImages = {};
 function ensureTestSceneAssets(themeId){
+  if(!swingRingImages[themeId]){
+    swingRingImages[themeId] = window.FSRAssets.load('assets/items/swing-rings/'+themeId+'.png');
+  }
   if(!USE_TEST_SCENE_ASSETS || !TEST_SCENE_FILES[themeId]) return;
   Object.keys(TEST_SCENE_FILES[themeId]).forEach(function(key){
     if(TEST_SCENE_ASSETS[themeId][key]) return;
@@ -272,12 +288,12 @@ function restoreSavedPics(){
 }
 
 /* ===== 3. 音效（Web Audio 合成，零外部文件） ===== */
-var Audio2 = window.createFSRAudio(dayPhase);
+var Audio2 = window.createFSRAudio(dayPhase, function(){ return Game.themeIndex; });
 
 /* ===== 4. 输入系统（键盘 + 触屏 / 鼠标） ===== */
 var Input = {
   keys:{}, jumpHeld:false,
-  pointerDown:false, startY:0, startX:0, slideFired:false,
+  pointerDown:false,
   tapX:-1, tapY:-1, tapHandled:false
 };
 
@@ -287,12 +303,11 @@ window.addEventListener('keydown', function(e){
   if([' ','arrowup','arrowdown','w','s','shift','d','enter'].indexOf(k)>=0) e.preventDefault();
   if(Game.state==='playing'){
     if(k===' '||k==='arrowup'||k==='w'){
-      if(!Input.keys[k]) requestJump();
+      if(!Input.keys[k] && !e.repeat) pressJump(k);
       Input.jumpHeld = true;
     }
-    if(k==='arrowdown'||k==='s'){ if(!Input.keys[k]) doSlide(); }
     if(k==='d'||k==='shift'){ if(!Input.keys[k]) doSkill(); }
-    if(k==='p'||k==='escape'){ Game.paused=!Game.paused; Audio2.click(); }
+    if((k==='p'||k==='escape') && !e.repeat){ Game.paused=!Game.paused; Audio2.click(); }
   }else{
     if(k==='enter'||k===' '){ Audio2.click(); primaryAction(); }
     if(k==='a'||k==='arrowleft'||k==='d'||k==='arrowright'){
@@ -323,7 +338,7 @@ window.addEventListener('keydown', function(e){
 });
 window.addEventListener('keyup', function(e){
   var k=e.key.toLowerCase();
-  if(k===' '||k==='arrowup'||k==='w') Input.jumpHeld=false;
+  if(k===' '||k==='arrowup'||k==='w'){ Input.jumpHeld=false; if(player) player.lift=0; }
   Input.keys[k]=false;
 });
 
@@ -349,27 +364,19 @@ function menuMusicBtnRect(){ var size = smallScreenButtonSize(); return {x:14, y
 function linkRect(){ return {x:850, y:14, w:96, h:Math.max(44, smallScreenTapMin())}; }
 
 canvas.addEventListener('pointerdown', function(e){
+  if(e.isPrimary === false) return;
   e.preventDefault(); Audio2.init(); Audio2.kick();
   var p = toLogic(e.clientX,e.clientY);
-  Input.pointerDown=true; Input.startX=p.x; Input.startY=p.y;
-  Input.slideFired=false; Input.tapX=p.x; Input.tapY=p.y; Input.tapHandled=false;
+  Input.pointerDown=true;
+  Input.tapX=p.x; Input.tapY=p.y; Input.tapHandled=false;
   if(Game.state==='playing'){
     if(hitRect(p.x,p.y,skillBtnRect())){ doSkill(); Input.tapHandled=true; return; }
     if(hitRect(p.x,p.y,musicBtnRect())){ Audio2.toggleMusic(); Input.tapHandled=true; return; }
     if(hitRect(p.x,p.y,pauseBtnRect())){ Game.paused=!Game.paused; Audio2.click(); Input.tapHandled=true; return; }
-    requestJump();
+    if(e.pointerType === 'touch') canvas.setPointerCapture(e.pointerId);
+    pressJump('touch');
   }
 });
-canvas.addEventListener('pointermove', function(e){
-  if(!Input.pointerDown) return;
-  var p = toLogic(e.clientX,e.clientY);
-  if(Game.state==='playing' && !Input.slideFired && (p.y-Input.startY)>34){
-    Input.slideFired=true; doSlide();
-  }
-});
-/* ★ 难度按钮悬停 / 按下：独立监听，绝不能改上面那个 ——
-   它开头有 `if(!Input.pointerDown) return;`，改了会破坏滑铲手势。
-   触屏上 pointermove 只在按住时触发，故悬停态天然只出现在有鼠标的设备。 */
 canvas.addEventListener('pointermove', function(e){
   var p = toLogic(e.clientX, e.clientY);
   var h = -1;
@@ -393,11 +400,13 @@ canvas.addEventListener('pointerdown', function(e){
 canvas.addEventListener('pointerup', function(){ pressedDiff = -1; });
 canvas.addEventListener('pointercancel', function(){ pressedDiff = -1; });
 canvas.addEventListener('pointerup', function(e){
+  if(e.isPrimary === false) return;
+  if(player) player.lift=0;
   e.preventDefault();
   Input.pointerDown=false; Input.jumpHeld=false;
   if(!Input.tapHandled && Game.state!=='playing') handleMenuTap(Input.tapX,Input.tapY);
 });
-canvas.addEventListener('pointercancel', function(){ Input.pointerDown=false; Input.jumpHeld=false; });
+canvas.addEventListener('pointercancel', function(e){ if(e.isPrimary === false) return; if(player) player.lift=0; Input.pointerDown=false; Input.jumpHeld=false; });
 canvas.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 
 /* ============================================================
@@ -501,10 +510,33 @@ var THEMES = [
     ground:'#b07d4a', groundTop:'#d9a86a', line:'#8d6236' },
   { id:'treehouse', name:'树 屋 平 台',
     sky:['#bfe4f5','#93c9e8'], far:'#7fae94', mid:'#5f9280', near:'#41735f',
-    ground:'#95683f', groundTop:'#7fc96a', line:'#4f8352' }
+    ground:'#95683f', groundTop:'#7fc96a', line:'#4f8352' },
+  { id:'bamboo', name:'竹 海 小 道',
+    sky:['#dbead0','#9ccab4'], far:'#8cba98', mid:'#5c996c', near:'#456f52',
+    ground:'#98734b', groundTop:'#b4ca75', line:'#728c4c' },
+  { id:'amazon', name:'亚 马 逊 雨 林',
+    sky:['#c2e6dd','#76bba5'], far:'#6caa91', mid:'#468c70', near:'#315f4d',
+    ground:'#806047', groundTop:'#75a55b', line:'#4c774b' },
+  { id:'huangshan', name:'中国 · 黄山', sky:['#d7ece3','#accacd'], far:'#91aca4', mid:'#608476', near:'#476e5d',
+    ground:'#877e73', groundTop:'#9bae77', line:'#6b7959' },
+  { id:'yakushima', name:'日本 · 屋久岛', sky:['#d7ece3','#accacd'], far:'#91aca4', mid:'#608476', near:'#476e5d',
+    ground:'#736a54', groundTop:'#80a35e', line:'#6b7959' },
+  { id:'sequoia', name:'美国 · 巨杉国家公园', sky:['#d7ece3','#accacd'], far:'#91aca4', mid:'#608476', near:'#476e5d',
+    ground:'#a06649', groundTop:'#a2a468', line:'#6b7959' },
+  { id:'banff', name:'加拿大 · 班夫', sky:['#d7ece3','#accacd'], far:'#91aca4', mid:'#608476', near:'#476e5d',
+    ground:'#827b70', groundTop:'#98b1a0', line:'#6b7959' },
+  { id:'fiordland', name:'新西兰 · 峡湾国家公园', sky:['#d7ece3','#accacd'], far:'#91aca4', mid:'#608476', near:'#476e5d',
+    ground:'#685f4b', groundTop:'#76a169', line:'#6b7959' }
 ];
 
 /* ===== 6. 游戏状态 ===== */
+var startScene = 0;
+if(typeof URLSearchParams !== 'undefined'){
+  var sceneParam = new URLSearchParams(window.location.search).get('scene');
+  startScene = Math.max(0, THEMES.findIndex(function(t){ return t.id === sceneParam; }));
+}
+function sceneButton(){ return {x:80,y:16,w:204,h:48}; }
+function nextStartScene(){ startScene = (startScene + 1) % THEMES.length; ensureTestSceneAssets(THEMES[startScene].id); }
 var Game = {
   state:'menu', charId:'cat', paused:false,
   score:0, books:0, acorns:0, lives:3, maxLives:3, nextHealScore:TUNING.healEvery,
@@ -960,11 +992,10 @@ function drawBackground(th){
   /* 天空 / 测试远景。远景速度远低于角色，避免产生前景倒退感。 */
   if(useSceneBackdrop){
     var backdrop = sceneAssets.distant;
-    var backdropH = GROUND_Y;
-    var backdropW = backdrop.naturalWidth / backdrop.naturalHeight * backdropH;
-    var backdropOff = (Game.scroll * 0.045) % backdropW;
-    ctx.drawImage(backdrop, -backdropOff, 0, backdropW, backdropH);
-    ctx.drawImage(backdrop, backdropW - backdropOff, 0, backdropW, backdropH);
+    var scale = Math.max((W + 24) / backdrop.naturalWidth, GROUND_Y / backdrop.naturalHeight);
+    var backdropW = backdrop.naturalWidth * scale, backdropH = backdrop.naturalHeight * scale;
+    ctx.drawImage(backdrop, (W - backdropW) / 2 + 12 * Math.sin(Game.scroll / 3200),
+      GROUND_Y - backdropH, backdropW, backdropH);
   }else{
     var g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
     g.addColorStop(0, th.sky0); g.addColorStop(1, th.sky1);
@@ -1146,8 +1177,13 @@ function drawForestTestLayer(img, top, height, speed, alpha){
   var offset = (Game.scroll * speed) % width;
   ctx.save();
   if(alpha !== undefined) ctx.globalAlpha = alpha;
-  for(var x = -offset; x < W; x += width){
-    ctx.drawImage(img, x, top, width, height);
+  var tile = Math.floor(Game.scroll * speed / width);
+  for(var x = -offset; x < W; x += width, tile++){
+    ctx.save();
+    ctx.translate(Math.round(x + (tile % 2 ? width : 0)), top);
+    ctx.scale(tile % 2 ? -1 : 1, 1);
+    ctx.drawImage(img, 0, 0, Math.ceil(width), height);
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -1257,6 +1293,31 @@ function drawDrifter(d){
   ctx.restore();
 }
 
+const ICON_ROWS = ['forest','classroom','treehouse','bamboo','amazon'];
+const ICON_KINDS = ['acorn','book','shield','magnet','double'];
+const WORLD_ROWS = ['huangshan','yakushima','sequoia','banff','fiordland'];
+const WORLD_OBSTACLES = ['stump','forestLog','branch'];
+function drawWorldProp(id, col, x, y, width, height){
+  var row = WORLD_ROWS.indexOf(id), img = TEST_OBJECT_ASSETS.worldProps;
+  if(row < 0 || col < 0 || !img || !img.complete || !img.naturalWidth) return false;
+  var w = img.naturalWidth / 8, h = img.naturalHeight / 5;
+  ctx.drawImage(img, col*w, row*h, w, h, x, y, width, height);
+  return true;
+}
+const OBSTACLE_ROWS = {
+  amazon:['stump','forestLog','branch'], bamboo:['stump','forestLog','branch'],
+  treehouse:['crate','stump','branch']
+};
+function drawBiomeIcon(p, x, y, size){
+  if(drawWorldProp(p.themeId, ICON_KINDS.indexOf(p.kind), x-size/2, y-size/2, size, size)) return true;
+  var img = TEST_OBJECT_ASSETS.biomeIcons;
+  if(!img || !img.complete || !img.naturalWidth) return false;
+  var row = ICON_ROWS.indexOf(p.themeId || currentTheme().id), col = ICON_KINDS.indexOf(p.kind);
+  if(row < 0 || col < 0) return false;
+  var w = img.naturalWidth / 5, h = img.naturalHeight / 5;
+  ctx.drawImage(img, col*w, row*h, w, h, x-size/2, y-size/2, size, size);
+  return true;
+}
 function drawObstacle(o){
   var th = currentTheme();
   ctx.save();
@@ -1272,8 +1333,27 @@ function drawObstacle(o){
     ctx.rotate(o.deadRot);
     ctx.translate(-(o.x + o.w / 2), -(o.y + o.h));
   }
-  var id = th.id;
-  if(o.type === 'forestLog' && TEST_SCENE_ASSETS.forest.log && TEST_SCENE_ASSETS.forest.log.complete && TEST_SCENE_ASSETS.forest.log.naturalWidth){
+  var id = o.themeId || th.id;
+  var worldCol = WORLD_OBSTACLES.indexOf(o.type);
+  if(worldCol >= 0 && drawWorldProp(id, 5 + worldCol, o.x, o.y, o.w, o.h)){ ctx.restore(); return; }
+  var atlas = TEST_OBJECT_ASSETS.biomeObstacles;
+  var col = OBSTACLE_ROWS[id] ? OBSTACLE_ROWS[id].indexOf(o.type) : -1;
+  if(col >= 0 && atlas && atlas.complete && atlas.naturalWidth){
+    var row = ['amazon','bamboo','treehouse'].indexOf(id);
+    var unit = atlas.naturalWidth / 480;
+    var top = [13,176,347][row], bottom = [143,298,451][row];
+    ctx.drawImage(atlas, col*160*unit, top*unit, 160*unit, (bottom-top)*unit,
+      o.x-2, o.y-2, o.w+4, o.h+2);
+    ctx.restore(); return;
+  }
+  var localArt = TEST_SCENE_ASSETS[id] && TEST_SCENE_ASSETS[id][o.type];
+  if(!localArt && o.type === 'branch' && (id === 'amazon' || id === 'bamboo')) localArt = TEST_OBJECT_ASSETS.forestBranch;
+  if(localArt && localArt.complete && localArt.naturalWidth){
+    var artScale = Math.min((o.w + 12) / localArt.naturalWidth, (o.h + 6) / localArt.naturalHeight);
+    var artW = localArt.naturalWidth * artScale, artH = localArt.naturalHeight * artScale;
+    ctx.shadowColor = 'rgba(255,245,203,.85)'; ctx.shadowBlur = 3;
+    ctx.drawImage(localArt, o.x + (o.w - artW) / 2, o.y + o.h - artH, artW, artH);
+  }else if(o.type === 'forestLog' && TEST_SCENE_ASSETS.forest.log && TEST_SCENE_ASSETS.forest.log.complete && TEST_SCENE_ASSETS.forest.log.naturalWidth){
     ctx.drawImage(TEST_SCENE_ASSETS.forest.log, o.x - 4, o.y - 7, o.w + 8, o.h + 7);
   }else if(o.type === 'rock' && id === 'forest' && TEST_OBJECT_ASSETS.forestRock && TEST_OBJECT_ASSETS.forestRock.complete && TEST_OBJECT_ASSETS.forestRock.naturalWidth){
     ctx.drawImage(TEST_OBJECT_ASSETS.forestRock, o.x - 6, o.y - 5, o.w + 12, o.h + 5);
@@ -1380,9 +1460,13 @@ function drawPickup(p){
   ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
 
   var sprite = p.kind === 'acorn' ? TEST_OBJECT_ASSETS.acorn : TEST_OBJECT_ASSETS.book;
+  if(drawBiomeIcon(p, 0, 0, 32)){ ctx.restore(); return; }
   if(USE_TEST_SCENE_ASSETS && sprite && sprite.complete && sprite.naturalWidth){
     if(p.kind === 'book') ctx.rotate(Math.sin(Game.time * 0.06 + p.seed) * 0.14);
-    ctx.drawImage(sprite, -14, -14, 28, 28);
+    var scale = 32 / Math.max(sprite.naturalWidth, sprite.naturalHeight);
+    var sw = sprite.naturalWidth * scale, sh = sprite.naturalHeight * scale;
+    ctx.shadowColor = '#fff2bc'; ctx.shadowBlur = 3;
+    ctx.drawImage(sprite, -sw / 2, -sh / 2, sw, sh);
   }else if(p.kind === 'acorn'){
     /* 橡果 */
     ctx.fillStyle = '#b5793f';
@@ -1423,8 +1507,8 @@ function createPlayer(charId){
   return {
     x:190, y:GROUND_Y - 68, w:52, h:68,
     vy:0, grounded:true, onPlatform:null,
-    jumps:0, maxJumps:(charId === 'owl') ? 2 : 1, jumpBuffer:0, slideBuffer:0,
-    sliding:false, slideTimer:0,
+    jumps:0, maxJumps:(charId === 'owl') ? 2 : 1, jumpBuffer:0, lift:0,
+    swing:null,
     gliding:false,
     dashing:false, dashTimer:0, dashImpactTimer:0, dashCd:0,
     hurtTimer:0, invuln:0, landTimer:0, landSquash:0,
@@ -1433,50 +1517,57 @@ function createPlayer(charId){
   };
 }
 
+function swingAnchor(p){
+  if(p.grounded || p.dashing) return null;
+  return platforms.find(function(pl){
+    var dx = pl.x+pl.w/2 - (p.x+p.w/2);
+    return !pl.swingUsed && dx >= -24 && dx <= 330;
+  });
+}
+function pressJump(source){
+  var p = player;
+  if(!p || Game.paused) return;
+  var now = Date.now();
+  if(p.swing){ p.lastTap = null; releaseSwing(p); return; }
+  if(source === p.tapSource && p.lastTap != null && now-p.lastTap <= 340 && swingAnchor(p)){
+    p.lastTap = null; doSkill(); return;
+  }
+  p.lastTap = now; p.tapSource = source;
+  requestJump();
+}
+function releaseSwing(p){
+  p.swing = null; p.lift = 0; p.vy = -10; Audio2.jump();
+}
 function requestJump(){
   var p = player;
   if(!p || Game.paused) return;
   var maxJ = CHARACTERS[Game.charId].id === 'owl' ? 2 : 1;
+  if(p.swing){ releaseSwing(p); return; }
   if(p.grounded){
-    p.jumpBuffer = 0; p.slideBuffer = 0;
-    var jumpFeet = p.y + p.h; p.h = 68; p.y = jumpFeet - p.h;
+    p.jumpBuffer = 0; p.lift = 18;
     p.vy = -13.2; p.grounded = false; p.jumps = 1;
-    p.sliding = false; p.slideTimer = 0;
     Audio2.jump(); puff(p.x, p.y + p.h, 6, '#ffffff');
   }else if(p.jumps < maxJ){
-    p.jumpBuffer = 0; p.slideBuffer = 0;
+    p.jumpBuffer = 0; p.lift = 0;
     p.vy = -11.4; p.jumps++;
     Audio2.doubleJump();
     ring(p.x + p.w / 2, p.y + p.h / 2, '#ffe9a8');
   }else{
-    p.jumpBuffer = TUNING.inputBufferSeconds * TUNING.framesPerSecond; p.slideBuffer = 0;
-  }
-}
-
-function doSlide(){
-  var p = player;
-  if(!p || Game.paused) return;
-  p.jumpBuffer = 0;
-  if(!p.grounded){
-    p.slideBuffer = TUNING.inputBufferSeconds * TUNING.framesPerSecond;
-    /* 空中下划：加速下落（快速落地） */
-    if(!p.sliding){
-      p.vy = Math.max(p.vy, 12);
-      p.sliding = true; p.slideTimer = 18;
-    }
-    return;
-  }
-  if(p.grounded && !p.sliding){
-    p.slideBuffer = 0;
-    p.sliding = true; p.slideTimer = 34;
-    var slideFeet = p.y + p.h; p.h = 38; p.y = slideFeet - p.h;
-    Audio2.noise(0.14, 0.08, 600);
+    p.jumpBuffer = TUNING.inputBufferSeconds * TUNING.framesPerSecond;
   }
 }
 
 function doSkill(){
   var p = player;
   if(!p || Game.paused) return;
+  if(p.swing){ releaseSwing(p); return; }
+  var anchor = swingAnchor(p);
+  if(anchor){
+    p.swing = anchor; anchor.swingUsed = true;
+    p.swingStartX = anchor.x; p.swingStartY = p.y;
+    p.swingTravel = Math.max(240, anchor.x+anchor.w/2-p.x-p.w/2+145);
+    p.jumpBuffer = 0; p.lift = 0; p.vy = 0; return;
+  }
   var c = CHARACTERS[Game.charId];
   if(c.id === 'cat'){
     if(p.dashCd > 0 || p.dashing) return;
@@ -1498,7 +1589,7 @@ function updateSkillHold(){
   if(!p) return;
   var c = CHARACTERS[Game.charId];
   var holding = Input.jumpHeld || Input.pointerDown || Input.keys.shift || Input.keys.d;
-  if(c.id === 'owl' && !p.grounded && p.vy > 0 && holding){
+  if(c.id === 'owl' && !p.swing && !p.grounded && p.vy > 0 && holding){
     if(!p.gliding){ p.gliding = true; }
   }else{
     p.gliding = false;
@@ -1630,12 +1721,15 @@ function resetWorld(){
   Game.nextPickupAt = D.pkInit;
   Game.themeAt = Game.speed * 60 * 20;
   obstacles = []; platforms = []; pickups = []; particles = []; floaters = [];
+  platforms.push({x:500, y:236, w:108, h:18});
   powerups = []; drifters = [];
   resetBuffs();
   Game.nextPowerupAt = D.pwInit;
 }
 
 function obstacleTypesFor(themeId){
+  if(WORLD_ROWS.includes(themeId)) return WORLD_OBSTACLES;
+  if(themeId === 'bamboo' || themeId === 'amazon') return ['stump', 'forestLog', 'branch'];
   if(themeId === 'forest'){
     return USE_TEST_SCENE_ASSETS ? ['forestLog', 'rock', 'stump', 'thorn', 'branch'] : ['rock', 'stump', 'thorn', 'branch'];
   }
@@ -1657,9 +1751,11 @@ function spawnObstacle(){
   else if(type === 'crate'){ w = 46 + Math.random() * 14; h = 46 + Math.random() * 26; }
   else { w = 54; h = 52; }  /* thorn */
 
+  var lowBranch = type === 'branch' && Math.random() < 0.5;
+  if(lowBranch){ w = 68; h = 30; }
   obstacles.push({
-    x:obstacleSpawnX(player, Game.speed), y:GROUND_Y - h, w:w, h:h, type:type,
-    dead:false, deadT:0, deadRot:0, scored:false
+    x:obstacleSpawnX(player, Game.speed), y:GROUND_Y - h - (lowBranch ? 44 : 0), w:w, h:h, type:type, lowBranch:lowBranch,
+    themeId:th.id, dead:false, deadT:0, deadRot:0, scored:false
   });
 }
 
@@ -1675,6 +1771,7 @@ function spawnPlatform(){
       x:W + 60 + i * 34, y:y - 26,
       w:26, h:26,
       kind:(Math.random() < 0.42 ? 'book' : 'acorn'),
+      themeId:currentTheme().id,
       tint:['#5b8fd4','#d9705f','#7bb37a','#a97ec4'][Math.floor(Math.random() * 4)],
       seed:Math.random() * 6.28, taken:false
     });
@@ -1690,6 +1787,7 @@ function spawnPickupLine(){
     pickups.push({
       x:W + 40 + i * 46, y:yy, w:26, h:26,
       kind:(Math.random() < 0.35 ? 'book' : 'acorn'),
+      themeId:currentTheme().id,
       tint:['#5b8fd4','#d9705f','#7bb37a','#a97ec4'][Math.floor(Math.random() * 4)],
       seed:Math.random() * 6.28, taken:false
     });
@@ -1709,6 +1807,7 @@ function spawnPowerup(){
   var kind = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
   var y = GROUND_Y - 70 - Math.random() * 110;
   powerups.push({
+    themeId:currentTheme().id,
     x:W + 50, y:y, w:34, h:34, kind:kind,
     seed:Math.random() * 6.28, taken:false
   });
@@ -1736,8 +1835,11 @@ function drawPowerup(p){
   ctx.lineJoin = 'round';
 
   var sprite = TEST_OBJECT_ASSETS[p.kind];
+  if(drawBiomeIcon(p, cx, cy, 33)){ ctx.restore(); return; }
   if(USE_TEST_SCENE_ASSETS && sprite && sprite.complete && sprite.naturalWidth){
-    ctx.drawImage(sprite, cx - 17, cy - 17, 34, 34);
+    var iconScale = 30 / Math.max(sprite.naturalWidth, sprite.naturalHeight);
+    var iw = sprite.naturalWidth * iconScale, ih = sprite.naturalHeight * iconScale;
+    ctx.drawImage(sprite, cx - iw / 2, cy - ih / 2, iw, ih);
   }else if(p.kind === 'shield'){
     ctx.beginPath();
     ctx.moveTo(cx, cy - 10);
@@ -1801,7 +1903,9 @@ function startGame(){
   Game.maxLives = diffCfg().maxLives;
   Game.lives = Game.maxLives;
   Game.distance = 0; Game.speed = diffCfg().speedBase;
-  Game.themeIndex = 0; Game.themeBlend = 0; Game.transitioning = false;
+  Game.themeIndex = startScene; Game.themeBlend = 0; Game.transitioning = false;
+  ensureTestSceneAssets(THEMES[startScene].id);
+  Game.lap = 1;
   Game.time = 0; Game.shake = 0; Game.banner = 130; Game.flash = 0;
   Game.scroll = 0;
   resetWorld();
@@ -1844,6 +1948,7 @@ function update(dt){
     if(Game.themeBlend >= 1){
       Game.themeBlend = 0;
       Game.themeIndex = (Game.themeIndex + 1) % THEMES.length;
+      if(Game.themeIndex === startScene) Game.lap++;
       Game.themeAt = Game.distance + Game.speed * 60 * 20;
       Game.transitioning = false;
       Game.banner = 130;
@@ -1865,32 +1970,35 @@ function update(dt){
   if(p.hurtTimer > 0) p.hurtTimer -= dt;
   if(p.landTimer > 0) p.landTimer -= dt;
   p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
-  p.slideBuffer = Math.max(0, p.slideBuffer - dt);
   if(p.landSquash > 0) p.landSquash *= Math.pow(0.72, dt);
 
-  /* 滑铲计时 */
-  if(p.sliding){
-    p.slideTimer -= dt;
-    if(p.slideTimer <= 0){
-      p.sliding = false;
-      if(p.grounded){ var standFeet = p.y + p.h; p.h = 68; p.y = standFeet - p.h; }
-    }
-  }
-
-  /* 重力（滑翔时减半且限速） */
   var g = GRAVITY;
+  if(p.lift > 0 && p.vy < 0 && (Input.jumpHeld || (Input.pointerDown && !Input.tapHandled))){
+    p.vy -= 0.34 * Math.min(dt,p.lift);
+    p.lift = Math.max(0,p.lift-dt);
+  }
   if(p.gliding && p.vy > 0){
     g = GRAVITY * 0.26;
     if(p.vy > 3.4) p.vy = 3.4;
     if(Math.random() < 0.25) puff(p.x - 4, p.y + p.h - 10, 1, 'rgba(255,255,255,.7)');
   }
-  p.vy += g * dt;
+  if(p.swing){
+    var progress = (p.swingStartX-p.swing.x+move)/p.swingTravel;
+    if(progress >= 1) releaseSwing(p);
+    else{
+      var endY = Math.min(p.swingStartY-22, GROUND_Y-165);
+      var dip = Math.min(42, GROUND_Y-p.h-10-p.swingStartY);
+      var swingY = p.swingStartY+(endY-p.swingStartY)*progress+Math.sin(Math.PI*progress)*Math.max(0,dip);
+      p.vy = dt > 0 ? (swingY-p.y)/dt : 0;
+    }
+  }
+  if(!p.swing) p.vy += g * dt;
   if(p.vy > MAX_FALL) p.vy = MAX_FALL;
   p.y += p.vy * dt;
 
   /* 平台碰撞（单向：下落时踩上） */
   p.onPlatform = null;
-  if(p.vy >= 0){
+  if(!p.swing && p.vy >= 0){
     var feetBefore = p.y + p.h - p.vy * dt;
     for(var i = 0; i < platforms.length; i++){
       var pl = platforms[i];
@@ -1913,7 +2021,7 @@ function update(dt){
   }
 
   /* 地面碰撞 */
-  if(p.y + p.h >= GROUND_Y){
+  if(!p.swing && p.y + p.h >= GROUND_Y){
     if(!p.grounded){
       p.landTimer = 9;
       p.landSquash = Math.min(0.16, Math.max(0.06, p.vy * 0.012));
@@ -1929,7 +2037,6 @@ function update(dt){
   }
 
   if(p.grounded && p.jumpBuffer > 0) requestJump();
-  else if(p.grounded && p.slideBuffer > 0){ p.sliding = false; doSlide(); }
 
   /* 跑动动画相位 */
   if(p.grounded && !p.sliding && !p.dashing) p.runPhase += move * 0.024;
@@ -2347,13 +2454,19 @@ function drawMenu(){
   ctx.fillText('森林学校大冒险', W / 2, 62);
   ctx.font = '14px system-ui,sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,.88)';
-  ctx.fillText('选一个小伙伴，跑过森林、教室和树屋', W / 2, 86);
+  ctx.fillText('选一个小伙伴，从喜欢的地图出发', W / 2, 86);
   ctx.fillStyle = '#ffd45e';
   ctx.font = 'bold 15px system-ui,sans-serif';
   ctx.fillText('最高分  ' + Game.best, W / 2, 107);
   ctx.restore();
 
   /* 难度选择器（标题下方、角色卡片上方 —— 卡片与开始按钮之间只有 36px，塞不下 94px） */
+  var sb = sceneButton();
+  ctx.save(); ctx.fillStyle = 'rgba(26,52,40,.94)';
+  roundRect(sb.x,sb.y,sb.w,sb.h,12); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 14px system-ui,sans-serif';
+  ctx.fillText('换起点 · ' + THEMES[startScene].name.replace(/ /g,'') + '  ›', sb.x+sb.w/2, sb.y+30);
+  ctx.restore();
   drawDifficultyRow();
 
   /* 角色卡片 */
@@ -2438,8 +2551,8 @@ function drawMenu(){
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.font = '14px system-ui,sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,.85)';
-  ctx.fillText('键盘：空格/↑ 跳跃（涂涂可二段） · ↓ 滑铲 · D/Shift 冲刺 · P 暂停', W / 2, H - 30);
-  ctx.fillText('触屏：点击跳 · 下滑滑铲 · 长按滑翔 · 右下角技能键', W / 2, H - 10);
+  ctx.fillText('轻点空格跳 · 按住跳得更高 · 快速双击空格向亮环抛链 · 再按放手', W / 2, H - 30);
+  ctx.fillText('触屏：点、按住或双点屏幕 · D/Shift 或右下角按钮使用技能 · P 暂停', W / 2, H - 10);
   ctx.restore();
 }
 
@@ -2527,7 +2640,7 @@ function drawHUD(){
   ctx.fillStyle = '#ffffff'; ctx.fillText(dTxt, W / 2, 46);
   ctx.font = '15px system-ui,sans-serif'; ctx.lineWidth = 4;
   ctx.fillStyle = 'rgba(255,255,255,.92)';
-  ctx.fillText('橡果 ' + Game.acorns + '   ·   书本 ' + Game.books, W / 2, 70);
+  ctx.fillText('收藏品 ' + Game.acorns + '   ·   手记 ' + Game.books, W / 2, 70);
   ctx.font = '12px system-ui,sans-serif';
   ctx.fillStyle = 'rgba(255,236,192,.92)';
   ctx.fillText('每 3000 分回复 1 心', W / 2, 90);
@@ -2538,8 +2651,10 @@ function drawHUD(){
     ctx.font = 'bold 18px system-ui,sans-serif';
     ctx.fillStyle = '#fff4d8';
     ctx.strokeStyle = 'rgba(80,30,10,.85)'; ctx.lineWidth = 5;
-    ctx.strokeText('前方障碍 · 准备跳跃', W - 24, 120);
-    ctx.fillText('前方障碍 · 准备跳跃', W - 24, 120);
+    var next = obstacles.find(function(ob){ return !ob.dead && ob.x > player.x + player.w; });
+    var hint = next && next.lowBranch ? '前方低枝 · 起跳越过' : '前方障碍 · 准备跳跃';
+    ctx.strokeText(hint, W - 24, 120);
+    ctx.fillText(hint, W - 24, 120);
   }
 
   /* 暂停按钮 */
@@ -2574,7 +2689,7 @@ function drawHUD(){
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 22px system-ui,sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(c.skill, sr.x + sr.w / 2, sr.y + 32);
+  ctx.fillText(player.swing ? '放 手' : swingAnchor(player) ? '抓 绳' : c.skill, sr.x + sr.w / 2, sr.y + 32);
   if(c.id === 'cat'){
     var pct = ready ? 1 : (1 - player.dashCd / c.cd);
     ctx.fillStyle = 'rgba(0,0,0,.28)';
@@ -2601,9 +2716,10 @@ function drawHUD(){
     var BC = diffCfg();
     ctx.font = 'bold 18px system-ui,sans-serif';
     ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.32)';
-    ctx.strokeText('难 度 · ' + BC.name, W / 2, 162);
+    var routeLabel = '无尽跑道 · 第 ' + Game.lap + ' 圈 · ' + BC.name;
+    ctx.strokeText(routeLabel, W / 2, 162);
     ctx.fillStyle = BC.color;
-    ctx.fillText('难 度 · ' + BC.name, W / 2, 162);
+    ctx.fillText(routeLabel, W / 2, 162);
     ctx.globalAlpha = 1;
   }
 
@@ -2732,8 +2848,8 @@ function drawGameOver(){
   var rows = [
     ['总得分', String(Math.floor(Game.score)), '#3f8f57'],
     ['跑过距离', Math.floor(Game.distance / 10) + ' m', '#4a7fb5'],
-    ['橡果', String(Game.acorns), '#b5793f'],
-    ['书本', String(Game.books), '#7a5aa8']
+    ['收藏品', String(Game.acorns), '#b5793f'],
+    ['手记', String(Game.books), '#7a5aa8']
   ];
   rows.forEach(function(r, i){
     var ry = py + 52 + i * 46;
@@ -2814,6 +2930,7 @@ function handleMenuTap(x, y){
       }
     }
     if(hitRect(x, y, menuMusicBtnRect())){ Audio2.toggleMusic(); return; }
+    if(hitRect(x, y, sceneButton())){ nextStartScene(); Audio2.click(); return; }
     if(hitRect(x, y, linkRect())){ Audio2.click(); window.open('https://willzhan1983.github.io/forest-school-games/', '_blank'); return; }
     if(hitRect(x, y, picBtnRect(0))){ pickPic('cat'); return; }
     if(hitRect(x, y, picBtnRect(1))){ pickPic('owl'); return; }
@@ -2863,6 +2980,26 @@ function render(){
     drawBackground(th);
 
     platforms.forEach(drawPlatform);
+    var targetRing = swingAnchor(player);
+    var ringImage = swingRingImages[th.id];
+    var ringReady = ringImage && ringImage.complete && ringImage.naturalWidth;
+    var ringRadius = ringReady ? 20 : 9;
+    platforms.forEach(function(pl){
+      if(pl.swingUsed && player.swing !== pl) return;
+      var ax = pl.x+pl.w/2, ay = pl.y-125;
+      ctx.save(); ctx.lineWidth = 4; ctx.strokeStyle = '#826239';
+      ctx.beginPath(); ctx.moveTo(ax,0); ctx.lineTo(ax,ay-ringRadius+2); ctx.stroke();
+      ctx.strokeStyle = '#ffd969';
+      if(ringReady) ctx.drawImage(ringImage, ax-23, ay-23, 46, 46);
+      else{ ctx.beginPath(); ctx.arc(ax,ay,9,0,Math.PI*2); ctx.stroke(); }
+      if(player.swing === pl){
+        ctx.beginPath(); ctx.moveTo(ax,ay+ringRadius-2); ctx.lineTo(player.x+player.w/2,player.y+8); ctx.stroke();
+      }else if(pl === targetRing){
+        ctx.strokeStyle = '#fff5bb'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(ax,ay,ringRadius+7,0,Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
+    });
     obstacles.forEach(drawObstacle);
     pickups.forEach(drawPickup);
     powerups.forEach(drawPowerup);
@@ -3094,7 +3231,10 @@ function loop(ts){
 
 /* 切后台自动暂停，避免回来被瞬间撞死 */
 document.addEventListener('visibilitychange', function(){
-  if(document.hidden && Game.state === 'playing') Game.paused = true;
+  if(document.hidden && Game.state === 'playing'){
+    if(player) player.lift=0; Input.pointerDown = false; Input.jumpHeld = false; Input.keys = {};
+    Game.paused = true;
+  }
 });
 
 /* ============================================================
@@ -3114,7 +3254,7 @@ requestAnimationFrame(loop);
 window.__fsr = { Game:Game, applyPic:applyPic, pickPic:pickPic, CHARACTERS:CHARACTERS,
                  Buff:Buff, grantPowerup:grantPowerup, spawnPowerup:spawnPowerup,
                  Audio2:Audio2, startGame:startGame, gameOver:gameOver, addScore:addScore, update:update, doSkill:doSkill,
-                 requestJump:requestJump, doSlide:doSlide,
+                 requestJump:requestJump,
                  /* ---- 难度系统（DIFF-002）---- */
                  DIFF:DIFF, DIFF_ORDER:DIFF_ORDER, diffCfg:diffCfg,
                  applyDifficulty:applyDifficulty, setDifficulty:setDifficulty,
